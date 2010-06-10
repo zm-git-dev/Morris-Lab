@@ -15,6 +15,7 @@ import getopt
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
+import matplotlib.ticker as ticker
 from array import array
 
 
@@ -98,14 +99,11 @@ def graph_frequency(alignments, readcount):
     analytic PDF over it
     """
 
-    x = alignments
-
-
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
     # the histogram of the data
-    n, bins, patches = ax.hist(x, len(readcount), normed=1, facecolor='green', alpha=0.75)
+    n, bins, patches = ax.hist(alignments, len(readcount), normed=1, facecolor='green', alpha=0.75)
 
     # hist uses np.histogram under the hood to create 'n' and 'bins'.
     # np.histogram returns the bin edges, so there will be 50 probability
@@ -118,12 +116,25 @@ def graph_frequency(alignments, readcount):
 
     ax.set_xlabel('Genes')
     ax.set_ylabel('Frequency')
-    #ax.set_title(r'$\mathrm{Histogram\ of\ IQ:}\ \mu=100,\ \sigma=15$')
+    ax.set_title(r'$\mathrm{Frequency\ of\ read\ alignments\ per\ gene}$')
     ax.set_xlim(0, len(readcount))
+
     ax.set_ylim(0, .15)
     ax.grid(True)
     print "graphing ", len(alignments), " reads mapped onto ", len(readcount), " genes."
 
+    # next we'll write a custom formatter
+    N = len(readcount)
+    
+    ind = np.arange(len(readcount))    # the x locations for the groups
+
+    # Set the labels for the x-axis
+    ax.xaxis.set_major_locator(ticker.MultipleLocator())
+    ax.xaxis.set_major_formatter(ticker.FixedFormatter(readcount.keys()))
+
+    # Set the angle of the X-axis labels.
+    fig.autofmt_xdate(rotation=40)
+    
     plt.show()
 
 if __name__ == "__main__":
