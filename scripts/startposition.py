@@ -86,7 +86,9 @@ def read_startpos(reference, alignFileBAM):
             pos = alignedread.pos
             txStart = int(row['txStart'])
             cdsStart = int(row['cdsStart'])
-            dStart = (txStart + pos) - cdsStart
+            
+            dStart = pos # (txStart + pos) - cdsStart
+            
             #if dStart < -1000:
             #    print "%s\t%d\t%d\ttx=%d\tcds=%d\tUTR=%d" % \
             #          (row['#name'], dStart, pos, txStart, cdsStart, 
@@ -94,7 +96,7 @@ def read_startpos(reference, alignFileBAM):
             
             key = str(dStart)
             if key in startpos:
-                startpos[key] = startpos[key] + 1
+                startpos[key] += 1
             else:
                 startpos[key] = 1
 

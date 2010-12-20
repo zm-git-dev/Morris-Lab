@@ -6,6 +6,17 @@
 # aligned.  The output is a histogram of frequencies that the reads
 # aligned to each gene in the table.
 #
+# usage: python frequency.py <reference_tbl.csv> <alignments.bam> 
+
+# reference_tbl.csv is a file of text records, with one gene per line,
+# each line of which is divided into fields seperated by commas.  The
+# fields should be ordered as follows:
+#     <gene name>, <cdsStart>, <cdsEnd>
+
+
+# alignments.bam is a binary SAM file containing aligned reads.  This
+# should be the output of bowtie or of tophat.
+
 
 import csv
 import pysam
