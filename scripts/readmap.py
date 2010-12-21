@@ -1,9 +1,8 @@
-# read the refseq map into a dictionary
+# convert microarray data from unigene to refseq gene names and graph the expression level
+#
+# usage: python ../../scripts/readmap.py platform.tbl refseq_reflink.tbl sample.tbl  
+# platform.tbl - platform tabel doenloaded from 
 
-# this is a poor-man's in-memory database
-#1	DV038825	243377
-#
-#
 
 import csv
 import sys
@@ -16,6 +15,7 @@ import matplotlib.ticker as ticker
 
 import numpy as np
 from array import array
+from itertools import ifilter
 
 
 
@@ -50,11 +50,21 @@ def main(argv = None):
         usage()                         
         return 2
 
+
     platform_map = read_map(args[0])
     
     ref_map = read_unigene2refseq(args[1])
 
-    process_sample_file(args[2], platform_map, ref_map)
+    ad = build_sample_dict(args[2], platform_map, ref_map)
+    abundance_list = filter_by_stdev(ad)
+    
+    #     abundance_list = process_sample_file(args[2], platform_map, ref_map)
+
+    filtered_list = filter_abundance(abundance_list, -20)
+    
+    bargraph_adbundance(filtered_list)
+    scatterplot_adbundance(filtered_list)
+
 
     return 0
 
@@ -73,7 +83,6 @@ def usage(msg = None):
 # 6	BC057190	104625
 #
 def read_map(reference): 
-    print "read_map"
     platform = dict()
     genemap = csv.DictReader(open(reference), delimiter='\t',
                              fieldnames=[
@@ -99,7 +108,6 @@ def read_map(reference):
 # Os01g0170300	hypothetical protein	NM_001048674	NP_001042139	233119	97	4327633	0
 #
 def read_unigene2refseq(reflink_file):
-    print "read_unigene2refseq"
     refmap = dict()
     refmap_reader = csv.DictReader(open(reflink_file), delimiter='\t')
     for row in refmap_reader:
@@ -114,21 +122,183 @@ def read_unigene2refseq(reflink_file):
 # 4 	-0.3684799
 def process_sample_file(sample_file, platform_map, ref_map):
 
-    refmap = dict()
+    abundance_list = list()
     sample_reader = csv.DictReader(open(sample_file), delimiter='\t', fieldnames=['#id', '#abundance'])
 
     for row in sample_reader:
         try:
             entrez = platform_map[int(row['#id'])]
             gene = ref_map[entrez]
-            abundance = math.pow(2, float(row['#abundance']))
-            print gene, abundance
+            value = math.pow(2, float(row['#abundance']))
+            abundance_list.append([gene, value])
             continue
         except ValueError:
             continue
         except KeyError:
             continue
+
+    for item in abundance_list:
+        print item[0], item[1]
+    
+    return abundance_list
                 
+
+# given a list like [('geneid', .0202) (geneid2, .1102)]
+# filter the list.
+#
+# you can choose the top x percent or the bottom x percent,
+# or choose just the top x or bottom x.
+# if -1 < x < 1, x is a percentage.
+# if x < -1 or x > 1 it is an absolute value.
+#
+# the new list is returned.
+#
+def filter_abundance(abundance_list, criteria):
+
+    # make a copy of the input list because we are going to sort it
+    # and I don't want to screw up the original.
+    #
+    genelist = abundance_list
+
+    genelist.sort(key=lambda gene: gene[1])
+    if (criteria > -1 and criteria < 1):
+        # criteria is a percentage
+        howmany = int(len(genelist) * criteria)
+    else:
+        # criteria is an absolute number of items
+        howmany = criteria
+
+    return genelist.__getitem__(slice(howmany, None) if howmany < 0 else slice(0, howmany))
+
+
+def bargraph_adbundance(abundance_list):
+    """
+    Make a histogram of normally distributed random numbers and plot the
+    analytic PDF over it
+    """
+
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    x =  np.arange(len(abundance_list))
+    l = [item[1] for item in abundance_list]
+ 
+    plt.bar(x, l)
+
+    # Set the labels for the x-axis
+    ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
+    ax.xaxis.set_major_formatter(ticker.FixedFormatter([item[0] for item in abundance_list]))
+
+    # Set the angle of the X-axis labels.
+    fig.autofmt_xdate(rotation=50)
+
+    ax.set_xlabel('Genes')
+    ax.set_ylabel('number of alignments')
+    ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
+
+    plt.show()
+
+
+# 1 	0.1771207
+# 2 	-0.4996132
+# 3 	0.07726434
+# 4 	-0.3684799
+def build_sample_dict(sample_file, platform_map, ref_map):
+
+    abundance_dict = dict()
+    sample_reader = csv.DictReader(open(sample_file), delimiter='\t', fieldnames=['#id', '#abundance'])
+
+    for row in sample_reader:
+        try:
+            entrez = platform_map[int(row['#id'])]
+            gene = ref_map[entrez]
+            value = math.pow(2, float(row['#abundance']))
+            if gene in abundance_dict:
+                abundance_dict[gene].append(value)
+            else:
+                abundance_dict[gene] = list([value])
+                
+            continue
+        except ValueError:
+            continue
+        except KeyError:
+            continue
+
+    return abundance_dict
+
+
+# Input to this routine is a dictionary of tuples.  The key is a gene
+# name.  Doesn't matter where this name comes from, as long as it is
+# unique within the list of keys.  The value of each item in the
+# dictionary is a variable length list of expression levels
+# (linearized).
+#
+# This routine calculates the stddev and mean of these expression
+# levels and filters the list down to one value.  If the stddev is <=
+# 0.3 then we replace the list with a single value that is the mean of
+# all the values for that item.  If the stddev is > 0.3 we toss the
+# data entirely.
+#
+def filter_by_stdev(ad):
+    out = list()
+    for k in ad.keys():
+        v = ad[k]
+        if len(v) > 2:
+            na = np.array(v)
+            if na.std <= 0.3:
+                out.append([k, na.mean()])
+               #print "%s\t%d\t%f\t%f" % (k, len(v), na.std(), na.mean()) # equivalent to np.mean(x), np.var(x)
+
+        elif (len(v) == 2):
+            na = np.array(v)
+            out.append([k, na.mean()])
+            #print "%s\t%d\t%f\t%f" % (k, len(v), 1, na.mean()) # equivalent to np.mean(x), np.var(x)
+
+        else:
+            out.append([k, v[0]])
+            #print "%s\t%d\t%f\t%f" % (k, len(v), 0, v[0]) # equivalent to np.mean(x), np.
+
+
+    for (g,v) in out:
+        print g,v
+
+
+    return out
+
+def scatterplot_adbundance(abundance_list):
+    """
+    Make a histogram of normally distributed random numbers and plot the
+    analytic PDF over it
+    """
+
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    x =  np.arange(len(abundance_list))
+    l = [item[1] for item in abundance_list]
+ 
+    plt.scatter(x, y, s=20, c='b', marker='o', cmap=None, norm=None,
+        vmin=None, vmax=None, alpha=None, linewidths=None,
+        verts=None, **kwargs)
+
+    plt.bar(x, l)
+
+    # Set the labels for the x-axis
+    ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
+    ax.xaxis.set_major_formatter(ticker.FixedFormatter([item[0] for item in abundance_list]))
+
+    # Set the angle of the X-axis labels.
+    fig.autofmt_xdate(rotation=50)
+
+    ax.set_xlabel('Genes')
+    ax.set_ylabel('number of alignments')
+    ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
+
+    plt.show()
+
+
 
 
 if __name__ == "__main__":
