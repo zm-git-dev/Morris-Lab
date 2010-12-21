@@ -46,27 +46,33 @@ def main(argv = None):
             usage()                         
             return 2
 
-    if len(args) != 3:
+    if len(args) != 4:
         usage()                         
         return 2
 
 
-    platform_map = read_map(args[0])
-    
-    ref_map = read_unigene2refseq(args[1])
+    array_list = prepare_microarray_list(args[0], args[1], args[2])
+    seq_list = read_seq_list(args[3])
 
-    ad = build_sample_dict(args[2], platform_map, ref_map)
+    scatterplot_adbundance(array_list, seq_list)
+
+    return 0
+
+
+def prepare_microarray_list(platformFile, xrefFile, sampleFile):
+    platform_map = read_map(platformFile)
+    
+    ref_map = read_unigene2refseq(xrefFile)
+
+    ad = build_sample_dict(sampleFile, platform_map, ref_map)
     abundance_list = filter_by_stdev(ad)
     
     #     abundance_list = process_sample_file(args[2], platform_map, ref_map)
-
-    filtered_list = filter_abundance(abundance_list, -20)
-    
-    bargraph_adbundance(filtered_list)
-    scatterplot_adbundance(filtered_list)
+    #out = trim_abundance(abundance_list, -20);
 
 
-    return 0
+    return abundance_list
+
 
 
 def usage(msg = None):
@@ -137,9 +143,6 @@ def process_sample_file(sample_file, platform_map, ref_map):
         except KeyError:
             continue
 
-    for item in abundance_list:
-        print item[0], item[1]
-    
     return abundance_list
                 
 
@@ -153,7 +156,7 @@ def process_sample_file(sample_file, platform_map, ref_map):
 #
 # the new list is returned.
 #
-def filter_abundance(abundance_list, criteria):
+def trim_abundance(abundance_list, criteria):
 
     # make a copy of the input list because we are going to sort it
     # and I don't want to screw up the original.
@@ -168,7 +171,12 @@ def filter_abundance(abundance_list, criteria):
         # criteria is an absolute number of items
         howmany = criteria
 
-    return genelist.__getitem__(slice(howmany, None) if howmany < 0 else slice(0, howmany))
+    # if howmany < 0  we want to take the *last* howmany entries.
+    # if howmany > 0 we want to take the *first* howmany entries.
+    s = slice(howmany, None) if howmany < 0 else slice(0, howmany)
+
+    # return a new sorted list containing just the slice indicated.
+    return genelist.__getitem__(s)
 
 
 def bargraph_adbundance(abundance_list):
@@ -227,6 +235,27 @@ def build_sample_dict(sample_file, platform_map, ref_map):
 
     return abundance_dict
 
+#
+# Read sequencing data
+# 
+# This should be the output of cufflinks run against the refseq knowgene database.
+#
+# gene_id	bundle_id	chr	left	right	FPKM	FPKM_conf_lo	FPKM_conf_hi	status
+def read_seq_list(seq_file):
+
+    seq_list = list()
+    seq_reader = csv.DictReader(open(seq_file), delimiter='\t')
+
+    for row in seq_reader:
+        try:
+            if (float(row['FPKM']) > 0):
+                seq_list.append([row['gene_id'], float(row['FPKM'])])
+            continue
+        except ValueError:
+            continue
+
+    return seq_list
+
 
 # Input to this routine is a dictionary of tuples.  The key is a gene
 # name.  Doesn't matter where this name comes from, as long as it is
@@ -259,42 +288,39 @@ def filter_by_stdev(ad):
             out.append([k, v[0]])
             #print "%s\t%d\t%f\t%f" % (k, len(v), 0, v[0]) # equivalent to np.mean(x), np.
 
-
-    for (g,v) in out:
-        print g,v
-
-
     return out
 
-def scatterplot_adbundance(abundance_list):
+def scatterplot_adbundance(arraydata_list, seqdata_list):
     """
     Make a histogram of normally distributed random numbers and plot the
     analytic PDF over it
     """
-
-
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    
+    a = set([item[0] for item in arraydata_list])
+    b = set([item[0] for item in seqdata_list])
+    d = a.intersection(b)
+    print "gene names in common = ", len(d)
+    
+    alist = filter(lambda item: item[0] in d,  arraydata_list)
+    blist = filter(lambda item: item[0] in d,  seqdata_list)
+        
+    x = [item[1] for item in alist]     
+    y = [item[1] for item in blist]     
 
-    x =  np.arange(len(abundance_list))
-    l = [item[1] for item in abundance_list]
- 
-    plt.scatter(x, y, s=20, c='b', marker='o', cmap=None, norm=None,
-        vmin=None, vmax=None, alpha=None, linewidths=None,
-        verts=None, **kwargs)
-
-    plt.bar(x, l)
+    plt.scatter(x, y)
 
     # Set the labels for the x-axis
-    ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
-    ax.xaxis.set_major_formatter(ticker.FixedFormatter([item[0] for item in abundance_list]))
+    #ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
+    #ax.xaxis.set_major_formatter(ticker.FixedFormatter([item[0] for item in abundance_list]))
 
     # Set the angle of the X-axis labels.
     fig.autofmt_xdate(rotation=50)
 
-    ax.set_xlabel('Genes')
-    ax.set_ylabel('number of alignments')
-    ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
+    ax.set_xlabel('Nelson data')
+    ax.set_ylabel('Morris data (FPKM)')
+    ax.set_title(r'$\mathrm{Comparison\ of\ microarray\ data\ with\ RNA-Seq\ data}$')
 
     plt.show()
 
