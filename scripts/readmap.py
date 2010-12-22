@@ -4,6 +4,12 @@
 # platform.tbl - platform tabel doenloaded from 
 
 
+import math
+
+import pylab
+import matplotlib
+
+
 import csv
 import sys
 import getopt
@@ -51,10 +57,20 @@ def main(argv = None):
         return 2
 
 
+
     array_list = prepare_microarray_list(args[0], args[1], args[2])
     seq_list = read_seq_list(args[3])
 
+    global fig
+    fig = plt.figure(1)
+
+    #make_bucket_graph(array_list)
     scatterplot_adbundance(array_list, seq_list)
+
+    #bargraph_adbundance(trim_abundance(array_list, -20))
+
+    plt.show()
+
 
     return 0
 
@@ -99,7 +115,8 @@ def read_map(reference):
                                  'Name'])
     for row in genemap:
         try:
-            platform[int(row['ID'])] = row['GENE']
+            # platform[int(row['ID'])] = row['GENE']
+            platform[int(row['ID'])] = row['GB_ACC']
         except ValueError:
             continue
 
@@ -133,10 +150,12 @@ def process_sample_file(sample_file, platform_map, ref_map):
 
     for row in sample_reader:
         try:
-            entrez = platform_map[int(row['#id'])]
-            gene = ref_map[entrez]
+            #entrez = platform_map[int(row['#id'])]
+            #gene = ref_map[entrez]
+            gene = platform_map[int(row['#id'])]
             value = math.pow(2, float(row['#abundance']))
             abundance_list.append([gene, value])
+            print gene, value
             continue
         except ValueError:
             continue
@@ -181,18 +200,14 @@ def trim_abundance(abundance_list, criteria):
 
 def bargraph_adbundance(abundance_list):
     """
-    Make a histogram of normally distributed random numbers and plot the
-    analytic PDF over it
+    Make a histogram of the number of reads versus gene
     """
-
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+    ax = fig.add_subplot(311)
 
     x =  np.arange(len(abundance_list))
     l = [item[1] for item in abundance_list]
  
-    plt.bar(x, l)
+    ax.bar(x, l)
 
     # Set the labels for the x-axis
     ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
@@ -204,8 +219,6 @@ def bargraph_adbundance(abundance_list):
     ax.set_xlabel('Genes')
     ax.set_ylabel('number of alignments')
     ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
-
-    plt.show()
 
 
 # 1 	0.1771207
@@ -219,8 +232,9 @@ def build_sample_dict(sample_file, platform_map, ref_map):
 
     for row in sample_reader:
         try:
-            entrez = platform_map[int(row['#id'])]
-            gene = ref_map[entrez]
+            #entrez = platform_map[int(row['#id'])]
+            #gene = ref_map[entrez]
+            gene = platform_map[int(row['#id'])]
             value = math.pow(2, float(row['#abundance']))
             if gene in abundance_dict:
                 abundance_dict[gene].append(value)
@@ -295,21 +309,26 @@ def scatterplot_adbundance(arraydata_list, seqdata_list):
     Make a histogram of normally distributed random numbers and plot the
     analytic PDF over it
     """
-    fig = plt.figure()
     ax = fig.add_subplot(111)
+
+    a_dict = dict(arraydata_list)
+    b_dict = dict(seqdata_list)
+
     
-    a = set([item[0] for item in arraydata_list])
-    b = set([item[0] for item in seqdata_list])
+
+    a = set(a_dict.keys())
+    b = set(b_dict.keys())
     d = a.intersection(b)
     print "gene names in common = ", len(d)
     
-    alist = filter(lambda item: item[0] in d,  arraydata_list)
-    blist = filter(lambda item: item[0] in d,  seqdata_list)
+    d_list = list(d)
+    x = [a_dict[i] for i in d_list]
+    y = [b_dict[i] for i in d_list]
+    assert len(x)==len(y), 'length of arraydata and seqdata should be the same'
         
-    x = [item[1] for item in alist]     
-    y = [item[1] for item in blist]     
-
     plt.scatter(x, y)
+    af =  AnnoteFinder(x,y, d_list)
+    fig.canvas.mpl_connect('button_press_event', af)
 
     # Set the labels for the x-axis
     #ax.xaxis.set_major_locator(ticker.FixedLocator(x+.75))
@@ -322,10 +341,114 @@ def scatterplot_adbundance(arraydata_list, seqdata_list):
     ax.set_ylabel('Morris data (FPKM)')
     ax.set_title(r'$\mathrm{Comparison\ of\ microarray\ data\ with\ RNA-Seq\ data}$')
 
-    plt.show()
+
+
+def make_bucket_graph(abundance_list):
+    """
+    Make a histogram that shws how many genes are found in each bucket of expression.
+    """
+
+    m = 0;
+
+    for k,v in abundance_list:
+        if (v > m):
+                print "%s\t%f" % (k,v)
+                m = v
+    
+    l = [item[1] for item in abundance_list]
+    
+    # Or, if bin is an integer, you can set the number of bins:
+    bins=100
+    hist,bin_edges=np.histogram(l,bins=bins)
+    # hist: [5 0 0 3]
+    # bin_edges: [ 0.     0.031  0.062  0.093  0.124]
+    print hist
+
+    ax = fig.add_subplot(313)
+
+    n, bins, patches = plt.hist(l, 100, normed=1, histtype='bar', rwidth=0.8)
+
+
+    ax.set_xlabel('Genes')
+    ax.set_ylabel('number of alignments')
+    ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
 
 
 
+class AnnoteFinder:
+  """
+  callback for matplotlib to display an annotation when points are clicked on.  The
+  point which is closest to the click and within xtol and ytol is identified.
+    
+  Register this function like this:
+    
+  scatter(xdata, ydata)
+  af = AnnoteFinder(xdata, ydata, annotes)
+  connect('button_press_event', af)
+  """
+
+  def __init__(self, xdata, ydata, annotes, axis=None, xtol=None, ytol=None):
+    self.data = zip(xdata, ydata, annotes)
+    if xtol is None:
+      xtol = ((max(xdata) - min(xdata))/float(len(xdata)))
+    if ytol is None:
+      ytol = ((max(ydata) - min(ydata))/float(len(ydata)))
+    xtol = 1
+    ytol = 1
+
+    self.xtol = xtol
+    self.ytol = ytol
+    if axis is None:
+      self.axis = pylab.gca()
+    else:
+      self.axis= axis
+    self.drawnAnnotations = {}
+    self.links = []
+
+  def distance(self, x1, x2, y1, y2):
+    """
+    return the distance between two points
+    """
+    return math.hypot(x1 - x2, y1 - y2)
+
+  def __call__(self, event):
+      tb = plt.get_current_fig_manager().toolbar
+      if event.button==1 and event.inaxes and tb.mode == '':
+          if event.inaxes:
+              clickX = event.xdata
+              clickY = event.ydata
+              if self.axis is None or self.axis==event.inaxes:
+                  annotes = []
+                  for x,y,a in self.data:
+                      if  clickX-self.xtol < x < clickX+self.xtol and  clickY-self.ytol < y < clickY+self.ytol :
+                          annotes.append((self.distance(x,clickX,y,clickY),x,y, a) )
+                          if annotes:
+                              annotes.sort()
+                              distance, x, y, annote = annotes[0]
+                              self.drawAnnote(event.inaxes, x, y, annote)
+                              for l in self.links:
+                                  l.drawSpecificAnnote(annote)
+
+  def drawAnnote(self, axis, x, y, annote):
+    """
+    Draw the annotation on the plot
+    """
+    if (x,y) in self.drawnAnnotations:
+      markers = self.drawnAnnotations[(x,y)]
+      for m in markers:
+        m.set_visible(not m.get_visible())
+      self.axis.figure.canvas.draw()
+    else:
+      #t = axis.text(x,y, "(%3.2f, %3.2f) - %s"%(x,y,annote), )
+      t = axis.text(x,y, "%s"%(annote), )
+      m = axis.scatter([x],[y], marker='d', c='r', zorder=100)
+      self.drawnAnnotations[(x,y)] =(t,m)
+      self.axis.figure.canvas.draw()
+
+  def drawSpecificAnnote(self, annote):
+    annotesToDraw = [(x,y,a) for x,y,a in self.data if a==annote]
+    for x,y,a in annotesToDraw:
+      self.drawAnnote(self.axis, x, y, a)
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
