@@ -71,6 +71,9 @@ def main(argv = None):
             usage()                         
             return 2
 
+
+    # read in the list of x,y points for the plot from stdin
+    #
     x = list()
     y = list()
     for line in sys.stdin.readlines():
@@ -81,23 +84,45 @@ def main(argv = None):
     global fig
     fig = plt.figure(1)
     ax = fig.add_subplot(111)
-    plt.scatter(x, y)
-    fig.autofmt_xdate(rotation=50)
 
+
+    # You might think that the way to get a log-log scatter plot
+    # would be to use scatter() and set the axis scales to "log"
+    # That doesn't work.  It ends up graphing only a portion of the data.
+    # 	ax.set_yscale('log')
+    #   ax.set_xscale('log')
+    #   ax.set_xlim(1e-1, 10e5)
+    #   ax.set_ylim(1e-1, 10e5)
+    #   plt.scatter(x, y)
+    #
+    # Calling plt.loglog() works though.
+    
+    plt.loglog(x,y,marker='o',linestyle='none')
+
+    # calculate regression statistics that we can display on the plot.
+    #
     slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
 
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+
+
+    # Provide a default label if the user did not supply one.
     if (title == None):
         title = "Comparison of %s and %s" % (xlabel, ylabel)
 
+    # Add a legend to display statistical measures.
+    # Note that there is no guarantee that this will not overlap a datapoint.
+    #
     ax.text(0.05, 0.9, 'R$\r{^{2}}$=%0.4f\nN=%d'%(r_value**2, len(x)),
             transform=ax.transAxes, va='top')
     
     ax.set_title(title)
 
-    plt.show()
+    fig.savefig("fig.%s.png" % (ylabel), format="png")
+    
+    #plt.show()
 
     return 0
 

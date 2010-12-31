@@ -85,13 +85,57 @@ def main(argv = None):
 
 
 
+#     The purpose of this routine is to prepare a list of genes with
+#     expression levels derived from microarray data.
+#
+#     The microarray sample files consist of lines like,
+#
+#     2 -0.4996132
+#     3 0.07726434
+#
+#     This routine converts these to something like,
+#
+#        NM_133826	.707292
+#        NM_177547	1.05501
+#
+#     The ID numbers has been replaced by unique gene names and the
+#     values have been converted from log2 to linear.
+#
+#     We lookup each id in the platform file.  That will give use a
+#     choice of gene annotations associated with that id.
+#   
+
 def prepare_microarray_list(platformFile, xrefFile, sampleFile):
-    platform_map = util.read_platform(platformFile)
+
+    # The platform file allows us to map from microarray spot
+    # identifier (a small integer) to a variety of gene annotations,
+    # including various gene identifiers (unigene, refgene, etc) and
+    # text annotation ("spermin binding protein")
+    #
+    platform_map = util.read_platform(platformFile, "UNIGENE")
     
     xref = genexref.GeneXref(xrefFile)
 
-    ad = build_sample_dict(sampleFile, platform_map, xref)
-    abundance_list = filter_by_stdev(ad)
+    abundance_dict = dict()
+    sample_reader = csv.DictReader(open(sampleFile), delimiter='\t', fieldnames=['#id', '#abundance'])
+
+    for row in sample_reader:
+        try:
+            entrez = platform_map[int(row['#id'])]
+            gene = xref.unigene2refgene(entrez)
+            value = math.pow(2, float(row['#abundance']))
+            if gene in abundance_dict:
+                abundance_dict[gene].append(value)
+            else:
+                abundance_dict[gene] = list([value])
+                
+            continue
+        except ValueError:
+            continue
+        except KeyError:
+            continue
+
+    abundance_list = filter_by_stdev(abundance_dict)
     
     return abundance_list
 

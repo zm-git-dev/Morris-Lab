@@ -6,7 +6,16 @@ import csv
 # 3	BM877548	76748
 # 6	BC057190	104625
 #
-def read_platform(reference): 
+# The platform file allows us to map from microarray spot
+# identifier (a small integer) to a variety of gene annotations,
+# including various gene identifiers (unigene, refgene, etc) and
+# text annotation ("spermin binding protein")
+#
+# By default we map each id to Entrez GENE ID.
+# this behavior can be overridden by passing an optional argument to this routine.
+#
+
+def read_platform(reference, column="GENE"): 
     platform = dict()
     genemap = csv.DictReader(open(reference), delimiter='\t',
                              fieldnames=[
@@ -18,7 +27,6 @@ def read_platform(reference):
     for row in genemap:
         try:
             platform[int(row['ID'])] = row['GENE']
-            #platform[int(row['ID'])] = row['GB_ACC']
         except ValueError:
             continue
 

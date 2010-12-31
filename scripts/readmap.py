@@ -115,7 +115,8 @@ def read_platform(reference):
                                  'Name'])
     for row in genemap:
         try:
-            platform[int(row['ID'])] = row['GENE']
+            # platform[int(row['ID'])] = row['GENE']
+            platform[int(row['ID'])] = row['UNIGENE']
             #platform[int(row['ID'])] = row['GB_ACC']
         except ValueError:
             continue
