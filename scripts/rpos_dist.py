@@ -22,6 +22,7 @@ import getopt
 import math
 import pprint
 import errno
+import exceptions
 
 
 #import gnote
@@ -164,6 +165,14 @@ class Options:
         self.show_multi_locus = False
     pass
 
+
+class GeneNotFound(exceptions.Exception):
+    def __init__(self):
+        return
+		
+    def __str__(self):
+        print "","An Gene Not Found exception occured!"
+
 # main() takes an optional 'argv' argument, which allows us to call it
 # from the interactive Python promp.
 
@@ -267,7 +276,8 @@ def read_knowngenes(known_genes, opt, stats):
 # If you really wanted to leave ncRNA out, you would have to filter
 # the list of exons that are used to find overlaps in an earlier step
 # to eliminate those that code for ncRNA.  That way you wouldn't see
-# any overlap with ncRNA so the offending reads would be filtered out before this.
+# any overlap with ncRNA so the offending reads would be filtered out
+# before this.
 #
 #
 #             if gene.cds.start == gene.cds.end:
@@ -324,6 +334,22 @@ def read_knowngenes(known_genes, opt, stats):
                 print gene
                 print ""
 
+            # Some gene names appear in the genome more than once,
+            # e.g. NM_001110250.  These entries have the same 
+            # name but appear at different loci in the genome.  They
+            # migh have different introns but they should presumably
+            # have the same sequence, or at least produce the same
+            # amino acid sequence.
+            #
+            # These rare genes are the reason that each entry in this
+            # gene dictionary (indexed by name) is a list.  Almost all
+            # gene entries will be a list of exactly one entry, but a
+            # few will have multiple entries in the list for a given
+            # name.  Later when matching a read to a gene/exon name it
+            # will be important to check if the read actually maps to
+            # the exon in question.
+
+
             chrom = g_row["chrom"]
             if chrom not in chromosomes:
                 chromosomes[chrom]= dict()
@@ -340,7 +366,73 @@ def read_knowngenes(known_genes, opt, stats):
     return chromosomes
     # END read_knownegens()
 
+
+# Given a name of a gene/exon pair, find the corresponding internal
+# structure
+def find_gene(knowngenes, row, opt, stats):
+
+    ename = row['ename']
+    # ename = NM_001011874_exon_2_0_chr1_3660633_r
+    gname = ename[:ename.index('_exon')]
+    # gname = NM_001011874
+
+    genename = opt.gene_name
+    if genename != None and genename != gname:
+        raise GeneNotFound
+
+    nexon = int( ename.split('_')[3])
+    # enum = 2
+    chrom = row['rchr']
+    # chrom = chr1
+    if chrom not in knowngenes:
+        if chrom not in warnings:
+            print >> sys.stderr, 'Warning:   Could not find known genes for chromosome "%s"' % (chrom)
+            warnings[chrom] = True
+            raise GeneNotFound
+
+    # Some genes appear in the genome more than once,
+    # e.g. NM_001110250.  We want to flag when that occurs.
+    #
+    # It is similar to when a read maps to multiple loci on
+    # the genome, or maps to a single loci with multple genes.
+    # It can be ambiguous which version of the gene the read
+    # should be assigned to.  The default behavior is to skip
+    # those reads but we give you the option to include them.
+    #
+    # We also collect and display statistics related to how
+    # many reads mapped to genes like this that have multiple
+    # loci.
+
+    if (len((knowngenes[chrom])[gname]) > 1):
+        stats.multi_locus_read += 1
+        if (not opt.show_multi_locus):
+            raise GeneNotFound
+
+    stats.reads_mapped = 0
+    rpos =  int(row['rpos'])
+    rend = int(row['rend'])
+    found = False
+    for gene in (knowngenes[chrom])[gname]:
+        if (gene.strand == -1):
+            exon = gene.exons[len(gene.exons) - 1 - nexon]
+        else:
+            exon = gene.exons[nexon]
+        if (exon.start <= rpos and exon.end >= rend):
+            found = True
+            break
+
+    if (not found):
+        print >> sys.stderr, 'Warning:   Could not find gene for read "%s""' % (row['rname'])
+        raise GeneNotFound
+
+    if (not gname in stats.genes_covered):
+        stats.genes_covered[gname] = 1
+    else:
+        stats.genes_covered[gname] += 1
     
+    return tuple([gene, exon])
+    # END find_gene()
+
 
 
 
@@ -363,7 +455,9 @@ def read_knowngenes(known_genes, opt, stats):
 #
 def process_reads(reads_file, knowngenes, opt, stats):
     match_limit = opt.match_limit
-    genename = opt.gene_name
+
+    hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s}"
+    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:5d} {5:5.2f} {6:5s}"
 
     try:
         warnings = dict()
@@ -371,72 +465,21 @@ def process_reads(reads_file, knowngenes, opt, stats):
 
         in_handle = open(reads_file)
 
-        hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s}"
-        rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:5d} {5:5.2f}"
-
-        print hdr.format("read name", "refseq", "gene", "dCDS", "dSOG", "dSOG%")
+        print hdr.format("read name", "refseq", "gene", "dCDS", "dSOG", \
+                         "dSOG%")
         
         reader = csv.DictReader(in_handle, delimiter='\t',
                                   fieldnames=['rchr', 'rpos', 'rend', 'rname', 'junk',
                                               'strand', 'echr', 'epos', 'eend', 'ename'])
         for row in reader:
-
+            
             stats.reads_processed += 1
 
-            ename = row['ename']
-            # ename = NM_001011874_exon_2_0_chr1_3660633_r
-            gname = ename[:ename.index('_exon')]
-            # gname = NM_001011874
-
-            if genename != None and genename != gname:
+            try:
+                gene, exon = find_gene(knowngenes, row, opt, stats)
+            except GeneNotFound as (e):
                 continue
-
-            nexon = int( ename.split('_')[3])
-            # enum = 2
-            chrom = row['rchr']
-            # chrom = chr1
-            if chrom not in knowngenes:
-                if chrom not in warnings:
-                    print >> sys.stderr, 'Warning:   Could not find known genes for chromosome "%s"' % (chrom)
-                    warnings[chrom] = True
-                    continue
-
-            # Some genes appear in the genome more than once,
-            # e.g. NM_001110250.  We want to flag when that occurs.
-            #
-            # It is similar to when a read maps to multiple loci on
-            # the genome, or maps to a single loci with multple genes.
-            # It can be ambiguous which version of the gene the read
-            # should be assigned to.  The default behavior is to skip
-            # those reads but we give you the option to include them.
-            #
-            if (len((knowngenes[chrom])[gname]) > 1):
-                stats.multi_locus_read += 1
-                if (not opt.show_multi_locus):
-                    continue
-
-            stats.reads_mapped = 0
-            rpos =  int(row['rpos'])
-            rend = int(row['rend'])
-            found = False
-            for gene in (knowngenes[chrom])[gname]:
-                if (gene.strand == -1):
-                    exon = gene.exons[len(gene.exons) - 1 - nexon]
-                else:
-                    exon = gene.exons[nexon]
-                if (exon.start <= rpos and exon.end >= rend):
-                    found = True
-                    break
-
-            if (not found):
-                print >> sys.stderr, 'Warning:   Could not find gene for read "%s""' % (row['rname'])
-                contiue
-
-            if (not gname in stats.genes_covered):
-                stats.genes_covered[gname] = 1
-            else:
-                stats.genes_covered[gname] += 1
-
+            
             rcds = exon.pos_cds
             if (gene.strand == 1):	# forward strand
                 rcds += int(row['rpos']) - exon.start
@@ -447,12 +490,6 @@ def process_reads(reads_file, knowngenes, opt, stats):
             # transcript, including 5'-UTR.  Report this as a fraction
             # of the gene transcript length.
 
-            # This is a mess - need to precalculate position
-            # w.r.t. start of gene just as we precalculate position
-            # w.r.t. start of coding region.  With that in hand it
-            # should be easy to figure out the position of the read
-            # w.r.t start of gene.
-
             gpos = exon.pos_gene
             if (gene.strand == 1):	# forward strand
                 gpos += int(row['rpos']) - exon.start
@@ -462,8 +499,14 @@ def process_reads(reads_file, knowngenes, opt, stats):
             pospct = (float(gpos)/float(gene.len)) * 100.0
 
 
-            print rec.format(row['rname'], gname, gene.common_name, \
-                             rcds, gpos, pospct)
+            prime_str = "-"
+            if (rcds < 0):
+                # read is in the 5' UTR region
+                prime_str = str(float(abs(rcds-gene.exons[0].pos_cds)) / float(abs(gene.exons[0].pos_cds)) * 100.0)
+
+
+            print rec.format(row['rname'], gene.name, gene.common_name, \
+                             rcds, gpos, pospct, prime_str)
                 
             nmatched += 1
             if match_limit != None and nmatched >= match_limit:
@@ -472,7 +515,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
     # It's sort of unbelieveable, but python does not seem to have a
     # default handler for SIGPIPE.  We have to explicitly handle it
     # ourselves in case the output is being piped to a command and
-    # than command finishes before we do.
+    # that command finishes before we do.
     #
 
     except IOError as (e):
