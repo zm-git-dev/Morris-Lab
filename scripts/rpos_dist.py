@@ -23,6 +23,7 @@ import math
 import pprint
 import errno
 import exceptions
+import collections
 
 
 #import gnote
@@ -31,6 +32,16 @@ import util
 
 global _debug               
 _debug = False                  
+
+class CDS:
+    def __init__(self):
+        self.start = 0
+        self.end = 0
+    def __str__(self):
+        rep = '{0} {1}'.format(self.start, self.end)
+        return rep
+    pass
+
 
 class Gene:
     def __init__(self):
@@ -45,15 +56,25 @@ class Gene:
 
 
     def __str__(self):
-        rep = '{0} {1!s} len: {2}  CDS: {3!s}\n'\
-              .format(self.name, self.strand, self.len, self.cds)
-        rep += ' {0:^10} {1:^10} {2:^5} {3:^5}\n'\
-               .format("start", "end", "len", "cds");
+        rep = '{0} {1!s} len: {2} ({3} {4} {5})  CDS: {6!s}\n'\
+              .format(self.name, self.strand,
+                      self.len, self.len_utr_5(), self.len_cds(), self.len_utr_3(),
+                      self.cds)
+        rep += ' {0:^10} {1:^10} {2:^5} {3:^9s} {4:^5s} {5:^5s} {6:^5s}\n'\
+               .format("start", "end", "len", "cds", "sog", "<cds", "cds>");
+        icds_start = self.exon_containing(self.cds.start)
+        icds_end = self.exon_containing(self.cds.end)
+
+        # If the gene is on the reverse strand, swap the CDS 
+        if (self.strand == -1):
+            icds_start, icds_end = icds_end, icds_start
+
         for i in xrange(0,len(self.exons)):
             exon = self.exons[i]
-            cds_i = self.cds_index()
-            if (i == cds_i):
-                star = "*"
+            if (i == icds_start):
+                star = ">"
+            elif (i == icds_end):
+                star = "<"
             else:
                 star = ""
             rep += "{0:1}{1:s}\n".format(star, exon)
@@ -63,76 +84,119 @@ class Gene:
 
     # Identify which exon contains the CDS.  Return -1 if there is no
     # coding region (noncoding rna)
-    def cds_index(self):
+    def exon_containing(self, pos):
         cds_i = -1
         for i in xrange(0,len(self.exons)):
             exon = self.exons[i]
             if (self.strand == 1):
-                if (self.cds.start >= exon.start and self.cds.start <= exon.end):
+                if (pos >= exon.start and pos <= exon.end):
                     cds_i = i
             else:
-                if (self.cds.end >= exon.start and self.cds.end <= exon.end):
+                if (pos >= exon.start and pos <= exon.end):
                     cds_i = i
         return cds_i
 
+    #
+    # Calculate how far the start of each exon is from the ends of the coding region.
+    #
     def annotate_cds(self):
-        # find the exon that contains the start of the CDS
-        cds_i = self.cds_index()
+        self.annotate_cds_start()
+        self.annotate_cds_end()
 
+    # Calculate how far the start of each exon is from the beginnging
+    # of the coding region.
+    #
+    def annotate_cds_start(self):
+        # find the exon that contains the position
+        
         if (self.strand == 1):
             # forward strand
+            cds_i = self.exon_containing(self.cds.start)
             exon = self.exons[cds_i]
-            exon.pos_cds = exon.start - self.cds.start
+            exon.cds.start = exon.start - self.cds.start
         else:
             # reverse strand
+            cds_i = self.exon_containing(self.cds.end)
             exon = self.exons[cds_i]
-            exon.pos_cds = self.cds.end - exon.end
+            exon.cds.start = self.cds.end - exon.end
 
         # proceed in the forward direction, annotating all
         # the exons *after* the CDS
         #
         for i in xrange(cds_i+1,len(self.exons)):
-            exon = self.exons[i]
-            exon.pos_cds = self.exons[i-1].pos_cds + self.exons[i-1].len()
+            self.exons[i].cds.start = self.exons[i-1].cds.start + self.exons[i-1].len()
  
         # proceed in the reverse direction, annotating 
         # the exons *before* the CDS
         #
         for i in xrange(cds_i-1,-1,-1):
-            exon = self.exons[i]
-            exon.pos_cds = self.exons[i+1].pos_cds - exon.len()
+            self.exons[i].cds.start = self.exons[i+1].cds.start - self.exons[i].len()
+
+
+    # Calculate how far the start of each exon is from the end
+    # of the coding region.
+    #
+    def annotate_cds_end(self):
+        if (self.strand == 1):
+            # forward strand
+            cds_i = self.exon_containing(self.cds.end)
+            exon = self.exons[cds_i]
+            exon.cds.end = exon.start - self.cds.end
+        else:
+            # reverse strand
+            cds_i = self.exon_containing(self.cds.start)
+            exon = self.exons[cds_i]
+            exon.cds.end =  self.cds.start- exon.end
+        
+        # proceed in the forward direction, annotating all
+        # the exons *after* the CDS
+        #
+        for i in xrange(cds_i+1,len(self.exons)):
+            self.exons[i].cds.end = self.exons[i-1].cds.end + self.exons[i-1].len()
+ 
+        # proceed in the reverse direction, annotating 
+        # the exons *before* the CDS
+        #
+        for i in xrange(cds_i-1,-1,-1):
+            self.exons[i].cds.end = self.exons[i+1].cds.end - self.exons[i].len()
+
+
+    def len_cds(self):
+        return self.len - (self.len_utr_5() + self.len_utr_3())
+
+    def len_utr_5(self):
+        return abs(self.exons[0].cds.start)
+
+    def len_utr_3(self):
+        nexon = len(self.exons)-1
+        return self.exons[nexon].cds.end + self.exons[nexon].len()
 
     pass
+    # End Gene
 
-class CDS:
-    def __init__(self):
-        self.start = 0
-        self.end = 0
-    def __str__(self):
-        rep = '{0} {1}'.format(self.start, self.end)
-        return rep
-    pass
 
 class Exon:
     def __init__(self):
         self.start = 0
         self.end = 0
         self.frame = +1
+        self.cds = CDS()
 
     def len(self):
        return abs(self.end - self.start)
 
     def __str__(self):
-        if (self.pos_cds%3 != self.frame):
+        if (self.cds.start%3 != self.frame):
             oof = "*"
         else:
             oof = ""
 
-        rep = "{0:10d} {1:10d} {2:5d} {3:5d} ({4}{5:1}) {6:5d}"
+        rep = "{0:10d} {1:10d} {2:5d} {3:5d} ({4}{5:1}) {6:5d} {7:5d} {8:5d}"
 
-        return rep.format(self.start, self.end, self.len(), self.pos_cds, \
-                          self.pos_cds%3, oof, self.pos_gene) 
+        return rep.format(self.start, self.end, self.len(), self.cds.start, \
+                          self.cds.start%3, oof, self.pos_gene, self.cds.start, self.cds.end) 
     pass
+    # End Exon
 
 class Stats:
     def __init__(self):
@@ -140,6 +204,10 @@ class Stats:
         self.reads_mapped = 0
         self.genes_covered = dict()
         self.multi_locus_read = 0
+        self.region_5prime = 0
+        self.region_3prime = 0
+        self.region_coding = 0
+        self.region_noncoding = 0
 
     def __str__(self):
         rep = ""
@@ -153,6 +221,18 @@ class Stats:
             nreads += v
         ngenes = len(self.genes_covered.values())
         rep += "{0:d} gene(s) covered in {1:d} reads\n".format(ngenes, nreads)
+
+        region_str = "\t{0:>9s} {1:7d}  {2:5.2f}%\n"
+        rep += "Regions:\n"
+        
+        rep += region_str.format("5'-UTR", self.region_5prime,
+                                 float(self.region_5prime)/float(self.reads_mapped)*100.0)
+        rep += region_str.format("3'-UTR", self.region_3prime,
+                                 float(self.region_3prime)/float(self.reads_mapped)*100.0)
+        rep += region_str.format("coding", self.region_coding,
+                                 float(self.region_coding)/float(self.reads_mapped)*100.0)
+        rep += region_str.format("noncoding", self.region_noncoding,
+                                 float(self.region_noncoding)/float(self.reads_mapped)*100.0)
         
         return rep
     pass
@@ -337,7 +417,7 @@ def read_knowngenes(known_genes, opt, stats):
             # Some gene names appear in the genome more than once,
             # e.g. NM_001110250.  These entries have the same 
             # name but appear at different loci in the genome.  They
-            # migh have different introns but they should presumably
+            # might have different introns but they should presumably
             # have the same sequence, or at least produce the same
             # amino acid sequence.
             #
@@ -346,8 +426,8 @@ def read_knowngenes(known_genes, opt, stats):
             # gene entries will be a list of exactly one entry, but a
             # few will have multiple entries in the list for a given
             # name.  Later when matching a read to a gene/exon name it
-            # will be important to check if the read actually maps to
-            # the exon in question.
+            # will be important to check which gene replicant the
+            # read actually maps to.
 
 
             chrom = g_row["chrom"]
@@ -408,7 +488,6 @@ def find_gene(knowngenes, row, opt, stats):
         if (not opt.show_multi_locus):
             raise GeneNotFound
 
-    stats.reads_mapped = 0
     rpos =  int(row['rpos'])
     rend = int(row['rend'])
     found = False
@@ -457,7 +536,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
     match_limit = opt.match_limit
 
     hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s}"
-    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:5d} {5:5.2f} {6:5s}"
+    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:5d} {5:6s} {6:5.2f}"
 
     try:
         warnings = dict()
@@ -466,7 +545,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
         in_handle = open(reads_file)
 
         print hdr.format("read name", "refseq", "gene", "dCDS", "dSOG", \
-                         "dSOG%")
+                         "regio", "%")
         
         reader = csv.DictReader(in_handle, delimiter='\t',
                                   fieldnames=['rchr', 'rpos', 'rend', 'rname', 'junk',
@@ -479,34 +558,60 @@ def process_reads(reads_file, knowngenes, opt, stats):
                 gene, exon = find_gene(knowngenes, row, opt, stats)
             except GeneNotFound as (e):
                 continue
-            
-            rcds = exon.pos_cds
+
+            stats.reads_mapped += 1
+
+            # Calculate distance from start of CDS.
+            #
+            dist_cdr_start = exon.cds.start
             if (gene.strand == 1):	# forward strand
-                rcds += int(row['rpos']) - exon.start
+                dist_cdr_start += int(row['rpos']) - exon.start
             else:			# reverse strand
-                rcds += exon.end - int(row['rend'])
+                dist_cdr_start += exon.end - int(row['rend'])
 
-            # Also figure out position w.r.t. beginning of the
-            # transcript, including 5'-UTR.  Report this as a fraction
-            # of the gene transcript length.
+            # Calculate distance from end of CDS.
+            #
+            dist_cds_end = exon.cds.end
+            if (gene.strand == 1):	# forward strand
+                dist_cds_end += int(row['rpos']) - exon.start
+            else:			# reverse strand
+                dist_cds_end += exon.end - int(row['rend'])
 
+            if (dist_cds_end > 0):
+                # length of 3'-UTR ...
+                pos_pct = (float(dist_cds_end) / float(gene.len_utr_3())) * 100.0
+                pos_which = "3'-UTR"
+                stats.region_3prime += 1
+            elif (dist_cdr_start < 0):
+                # length of 5'-UTR ...
+                len_5utr = gene.len_utr_5()
+                # distance from start of gene ...
+                dist_sog = len_5utr  - abs(dist_cdr_start)
+                pos_pct = (float(dist_sog) / float(len_5utr)) * 100.0
+                pos_which = "5'-UTR"
+                stats.region_5prime += 1
+            elif (gene.len_cds() > 0):
+                pos_pct = float(dist_cdr_start) / float(gene.len_cds()) * 100.0
+                pos_which = "CDS"
+                stats.region_coding += 1
+            else:
+                pos_pct = float(dist_cdr_start) / float(gene.len) * 100.0
+                pos_which = "NC"
+                stats.region_noncoding += 1
+
+            # calculate position w.r.t. beginning of the
+            # transcript as a fraction of entire gene transcript length.
+            #
             gpos = exon.pos_gene
             if (gene.strand == 1):	# forward strand
                 gpos += int(row['rpos']) - exon.start
             else:			# reverse strand
-                gpos += exon.end - int(row['rpos'])
+                gpos += exon.end - int(row['rend'])
             
             pospct = (float(gpos)/float(gene.len)) * 100.0
 
-
-            prime_str = "-"
-            if (rcds < 0):
-                # read is in the 5' UTR region
-                prime_str = str(float(abs(rcds-gene.exons[0].pos_cds)) / float(abs(gene.exons[0].pos_cds)) * 100.0)
-
-
             print rec.format(row['rname'], gene.name, gene.common_name, \
-                             rcds, gpos, pospct, prime_str)
+                             dist_cdr_start, gpos, pos_which, pos_pct)
                 
             nmatched += 1
             if match_limit != None and nmatched >= match_limit:
