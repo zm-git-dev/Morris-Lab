@@ -103,7 +103,7 @@ class Gene:
         self.annotate_cds_start()
         self.annotate_cds_end()
 
-    # Calculate how far the start of each exon is from the beginnging
+    # Calculate how far the start of each exon is from the beginning
     # of the coding region.
     #
     def annotate_cds_start(self):
@@ -535,8 +535,8 @@ def find_gene(knowngenes, row, opt, stats):
 def process_reads(reads_file, knowngenes, opt, stats):
     match_limit = opt.match_limit
 
-    hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s}"
-    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:5d} {5:6s} {6:5.2f}"
+    hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s} {6:^5s}"
+    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:6s} {5:5.2f} {6:5.2f}"
 
     try:
         warnings = dict()
@@ -544,8 +544,8 @@ def process_reads(reads_file, knowngenes, opt, stats):
 
         in_handle = open(reads_file)
 
-        print hdr.format("read name", "refseq", "gene", "dCDS", "dSOG", \
-                         "regio", "%")
+        print hdr.format("read name", "refseq", "gene", "dCDS", \
+                         "regio", "%", "gene%")
         
         reader = csv.DictReader(in_handle, delimiter='\t',
                                   fieldnames=['rchr', 'rpos', 'rend', 'rname', 'junk',
@@ -577,7 +577,21 @@ def process_reads(reads_file, knowngenes, opt, stats):
             else:			# reverse strand
                 dist_cds_end += exon.end - int(row['rend'])
 
-            if (dist_cds_end > 0):
+            # calculate position w.r.t. beginning of the
+            # transcript as a fraction of entire gene transcript length.
+            #
+            gpos = exon.pos_gene
+            if (gene.strand == 1):	# forward strand
+                gpos += int(row['rpos']) - exon.start
+            else:			# reverse strand
+                gpos += exon.end - int(row['rend'])
+            gpos_pct = (float(gpos) / float(gene.len)) * 100.0
+            
+            if (gene.len_cds() == 0):
+                pos_pct = gpos_pct
+                pos_which = "NC"
+                stats.region_noncoding += 1
+            elif (dist_cds_end > 0):
                 # length of 3'-UTR ...
                 pos_pct = (float(dist_cds_end) / float(gene.len_utr_3())) * 100.0
                 pos_which = "3'-UTR"
@@ -595,23 +609,10 @@ def process_reads(reads_file, knowngenes, opt, stats):
                 pos_which = "CDS"
                 stats.region_coding += 1
             else:
-                pos_pct = float(dist_cdr_start) / float(gene.len) * 100.0
-                pos_which = "NC"
-                stats.region_noncoding += 1
-
-            # calculate position w.r.t. beginning of the
-            # transcript as a fraction of entire gene transcript length.
-            #
-            gpos = exon.pos_gene
-            if (gene.strand == 1):	# forward strand
-                gpos += int(row['rpos']) - exon.start
-            else:			# reverse strand
-                gpos += exon.end - int(row['rend'])
+                raise Exception
             
-            pospct = (float(gpos)/float(gene.len)) * 100.0
-
             print rec.format(row['rname'], gene.name, gene.common_name, \
-                             dist_cdr_start, gpos, pos_which, pos_pct)
+                             dist_cdr_start, pos_which, pos_pct, gpos_pct)
                 
             nmatched += 1
             if match_limit != None and nmatched >= match_limit:
