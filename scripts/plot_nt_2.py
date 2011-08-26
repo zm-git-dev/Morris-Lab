@@ -20,7 +20,7 @@ import numpy as np
 from array import array
 from itertools import ifilter
 
-import gnote
+#import gnote
 import genexref
 import util
 
@@ -28,19 +28,29 @@ from Bio.SeqFeature import FeatureLocation
 
 from Bio import SeqIO
 from Bio import SeqFeature
-from BCBio import GFF
-from BCBio.GFF import (GFF3Writer, GFFExaminer, GFFParser, DiscoGFFParser)
+#from BCBio import GFF
+#from BCBio.GFF import (GFF3Writer, GFFExaminer, GFFParser, DiscoGFFParser)
 
 import pysam
 
+global _debug               
+_debug = False                  
 
 
 class Gene:
     pass
 
-class Exon:
+class CDS:
     pass
 
+class Exon:
+    def len(self):
+       return self.end - self.start 
+
+    pass
+
+class Stats:
+    pass
 
 # main() takes an optional 'argv' argument, which allows us to call it
 # from the interactive Python promp.
@@ -49,9 +59,13 @@ def main(argv = None):
     if argv is None:
         argv = sys.argv
     
-    output = ""    # output filename (defaults to stdout)
+    gene_name = None
+    match_limit = None
+    range_str = None
+    print_genelist = False
+    
     try:
-        opts, args = getopt.getopt(argv, "hl:o:d", ["help", "output="])
+        opts, args = getopt.getopt(argv, "hdLl:g:r:", ["help", "output="])
     except getopt.GetoptError, msg:          
         usage(msg)                         
         return 2
@@ -61,7 +75,22 @@ def main(argv = None):
             sys.exit()                  
         elif opt == '-d':                
             global _debug               
-            _debug = 1                  
+            _debug = True                  
+        elif opt == '-L':  # print a gene list and exit.
+            print_genelist = True
+        elif opt == '-r':  # range of nucleotide to look at.
+                           # takes a range as "n:m" where
+                           # n < m
+                           # -r -200:200
+            range_str = arg
+        elif opt == '-g':  # limit the match to one particular gene
+                           # takes a gene name as argument;
+                           # -g NM_29391293
+            gene_name = arg
+        elif opt == '-l':  # limit the number of matching reads
+                           # takes an integrer as argument
+                           # stop processing after matching n reads to exons.
+            match_limit = int(arg)
         else:
             usage()                         
             return 2
@@ -70,94 +99,174 @@ def main(argv = None):
         usage()                         
         return 2
 
-    known_genes = args[0]
-    accepted_hits = args[1]
+    gene_file = args[0]
+    reads_file = args[1]
 
+    knowngenes = read_knowngenes(gene_file, gene_name)
+    poslist = process_reads(reads_file, knowngenes, match_limit)
+
+    if print_genelist:
+        print "# common_name\trefseq_name\tread_count"
+        for chrom in knowngenes:
+            for gene in knowngenes[chrom]:
+                print "%s\t%s\t%d" % (gene.common_name, gene.name, gene.readcount)
+    else:
+        graph_startpos(poslist, range_str)
+
+    return 0
+
+
+# determine whether the range "contains" the read
+#
+def overlap(read, feature):
+    assert feature.start < feature.end
+    assert feature.start > 0
+    assert read.pos > 0 
+    return (read.pos >=  feature.start and read.pos+read.rlen <= feature.end)
+                
+def strands_match(read, gene):
+    assert gene.strand == -1 or gene.strand == 1
+    return (read.is_reverse and gene.strand == -1) or (not read.is_reverse and gene.strand == 1)
+                
+def read_knowngenes(known_genes, genename = None):
     chromosomes = dict()
-
-
-    #bin	name	chrom	strand	txStart	txEnd	cdsStart	cdsEnd	exonCount	exonStarts	exonEnds	id	name2	cdsStartStat	cdsEndStat	exonFrames
-    #608	NR_003519	chr17	-	3064317	3084183	3084183	3084183	8	3064317,3076499,3077292,3077687,3078999,3079354,3080868,3083967,	3064460,3076782,3077446,3077834,3079138,3079591,3081034,3084183,	172717	Pisd-ps2	unk	unk	-1,-1,-1,-1,-1,-1,-1,-1,
-    #9	NM_134123	chr17	+	3114971	3198859	3115388	3198210	20	3114971,3145074,3148535,3159162,3162958,3164146,3167962,3169326,3171102,3177092,3177610,3178154,3185063,3185760,3187588,3190146,3191816,3193013,3195777,3196759,	3115418,3145158,3148580,3159324,3163112,3164277,3168139,3169406,3171220,3177224,3177723,3178348,3185164,3185874,3187745,3190280,3191961,3193082,3195993,3198859,	277518	Scaf8	cmpl	cmpl	0,0,0,0,0,1,0,0,2,0,0,2,1,0,0,1,0,1,1,1,
-
+    genecount = 0
+    badframecount = 0
 
     # read in the known genes.
     #
     try:
-        in_handle = None
         in_handle = open(known_genes)
-
-        previous = Gene()
-        previous.end = 0
+        
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for g_row in g_reader:
-            # parse exons.
-            es_reader = csv.reader([g_row["exonStarts"]], delimiter=',')
-            ee_reader = csv.reader([g_row["exonEnds"]], delimiter=',')
-            estart_list = es_reader.next()
-            eend_list = ee_reader.next()
-            exon_list = list()
-            for i in range(int(g_row["exonCount"])):
-                #print i, int(estart_list[i]), int(eend_list[i])
-                exon_list.append([int(estart_list[i]), int(eend_list[i])])
-
-            # parse .
-            es_reader = csv.reader([g_row["exonStarts"]], delimiter=',')
-            ee_reader = csv.reader([g_row["exonEnds"]], delimiter=',')
-            ec_reader = csv.reader([g_row["exonFrames"]], delimiter=',')
-            estart_list = es_reader.next()
-            eend_list = ee_reader.next()
-            ecnd_list = ec_reader.next()
-            exon_list = list()
-            for i in range(int(g_row["exonCount"])):
-                #print i, int(estart_list[i]), int(eend_list[i])
-                exon = Exon()
-                exon.start = int(estart_list[i])
-                exon.end = int(eend_list[i])
-                exon.frame = int(ecnd_list[i])
-                exon_list.append(exon)
-
+            if genename != None and genename != g_row["name"]:
+                continue
             gene = Gene()
             gene.start = int(g_row["txStart"])
             gene.end = int(g_row["txEnd"])
-            gene.exons = exon_list
-            gene.cdsStart = int(g_row["cdsStart"])
-            gene.cdsEnd = int(g_row["cdsEnd"])
+            gene.cds = CDS()
+            gene.cds.start = int(g_row["cdsStart"])
+            gene.cds.end = int(g_row["cdsEnd"])
+            gene.readcount = 0
+            gene.name = g_row["name"]
+            gene.common_name = g_row["name2"]
+
+            if gene.cds.start == gene.cds.end:
+                # it is a non-coding RNA.
+                # don't add to the gene list.
+                continue
+            
             gene.name = g_row["name"]
             if  g_row["strand"] == "-":
                 gene.strand = -1
             else:
                 gene.strand = +1
-                
-            assert gene.end >= previous.end
-            previous = gene
-            
 
+            
+            es_reader = csv.reader([g_row["exonStarts"]], delimiter=',')
+            ee_reader = csv.reader([g_row["exonEnds"]], delimiter=',')
+            ef_reader = csv.reader([g_row["exonFrames"]], delimiter=',')
+            estart_list = es_reader.next()
+            eend_list = ee_reader.next()
+            efrm_list = ef_reader.next()
+            exon_list = list()
+            for i in range(int(g_row["exonCount"])):
+                exon = Exon()
+                exon.start = int(estart_list[i])
+                exon.end = int(eend_list[i])
+                exon.frame = int(efrm_list[i])
+
+                exon_list.append(exon)
+
+
+            # calculate how far from the start of the coding region each exon begins.
+            
+            cds_i = 0
+            cds_e = 0
+            if (gene.strand == 1):
+                # forward strand
+
+                #Identify which exon contains the CDS.
+                for i in range(0,len(exon_list)):
+                    exon = exon_list[i]
+                    if (gene.cds.start >= exon.start and gene.cds.start <= exon.end):
+                        cds_i = i
+                    if (gene.cds.end >= exon.start and gene.cds.end <= exon.end):
+                        cds_e = i
+                        
+                                        
+                exon = exon_list[cds_i]
+                exon.pos_cds = exon.start - gene.cds.start
+                for i in range(cds_i+1,len(exon_list)):
+                    exon = exon_list[i]
+                    exon.pos_cds = exon_list[i-1].pos_cds + exon_list[i-1].len()
+
+                for i in range(cds_i-1,-1,-1):
+                    exon = exon_list[i]
+                    exon.pos_cds = exon_list[i+1].pos_cds - exon.len()
+            else:
+                # reverse strand
+
+                #Identify which exon contains the CDS.
+                for i in range(0,len(exon_list)):
+                    exon = exon_list[i]
+                    if (gene.cds.end >= exon.start and gene.cds.end <= exon.end):
+                        cds_i = i
+                    if (gene.cds.start >= exon.start and gene.cds.start <= exon.end):
+                        cds_e = i
+
+                exon = exon_list[cds_i]
+                exon.pos_cds = gene.cds.end - exon.end
+                for i in range(cds_i+1, len(exon_list)):
+                    exon = exon_list[i]
+                    exon.pos_cds = exon_list[i-1].pos_cds - exon.len()
+
+                for i in range(cds_i-1,-1,-1):
+                    exon = exon_list[i]
+                    exon.pos_cds = exon_list[i+1].pos_cds + exon_list[i+1].len()
+
+#                 print "%s %d" % (gene.name, gene.strand)
+#                 for i in range(0,len(exon_list)):
+#                     exon = exon_list[i]
+#                     if (i == cds_i):
+#                         print "*%d\t%d\t%d\t%d (%d) (expect %d)" % (exon.start, exon.end, exon.len(), exon.pos_cds, exon.pos_cds%3, exon.frame)
+#                     else:
+#                         print " %d\t%d\t%d\t%d (%d) (expect %d)" % (exon.start, exon.end, exon.len(),  exon.pos_cds, exon.pos_cds%3, exon.frame)
+#                 print "\n\n"
+                
+            gene.exons = exon_list
+                
             chrom = g_row["chrom"]
             if chrom not in chromosomes:
                 chromosomes[chrom]= list()
             chromosomes[chrom].append(gene)
+            genecount += 1
 
             
     finally:
         if in_handle is not None:
             in_handle.close()
 
+    return chromosomes
+    # END read_knownegens()
 
+    
 
+# process the reads
+#
+def process_reads(reads_file, knowngenes, match_limit):
 
-
-
-    # process the reads
-    #
     try:
+        poslist = list()
         samfile = None
-        samfile = pysam.Samfile( accepted_hits, "r" )
+        samfile = pysam.Samfile( reads_file, "r" )
 
         unmatched = 0
         unmatched_gene = 0
         unmatched_strand = 0
         unmatched_exon = 0
+        nmatched = 0
         nreads = 0
         warnings = dict()
         for alignedread in samfile.fetch():
@@ -168,56 +277,48 @@ def main(argv = None):
             matched_strand = False
             matched_exon = False
             chrom = samfile.getrname(alignedread.rname)
-            if chrom not in chromosomes:
+            if chrom not in knowngenes:
                 if chrom not in warnings:
-                    print 'Warning:   Could not find known genes for chromosome "%s"' % (chrom)
+                    print >> sys.stderr, 'Warning:   Could not find known genes for chromosome "%s"' % (chrom)
                     warnings[chrom] = True
                 continue
-            previous = Gene()
-            previous.end = 0
-            for gene in chromosomes[chrom]:
+            for gene in knowngenes[chrom]:
 
-                assert gene.end >= previous.end
-                previous = gene
-
-                #
-                # Assume the known gene list is sorted by ending
-                # position.  If the current read starts at a point
-                # past the end of the current gene, it will also be
-                # past every subsequent gene.  Just skip all the
-                # follwing genes because there is no way they can
-                # match
-                #
-                if alignedread.pos > gene.end:
-                    break;
-                
                 #
                 # check whether this read overlaps this gene...
                 #
                 if overlap(alignedread, gene):
-                    #print "read %s overlaps gene %s" % (alignedread.qname, gene.name)
                     matched_gene = True
                     if strands_match(alignedread, gene):
-                        #print "\tstrands match"
                         matched_strand = True
                         exonlist = gene.exons
                         for exon in exonlist:
                             # check whether this read overlaps this exon...
                             if overlap(alignedread, exon):
-                                #print "\t\tread overlaps exon"
                                 if matched == True:
-                                    print "READ MATCHED MORE THAN ONE EXON!"
-                                    print "[%d, %d] (%d) %d " % (alignedread.pos, alignedread.pos+alignedread.rlen, alignedread.rlen, alignedread.is_reverse )
-                                    print "[%d, %d] (%d) " % (exon.start, exon.end, exon.end-exon.start)
-                                    print "\n"
+                                    print >> sys.stderr, "READ MATCHED MORE THAN ONE EXON!"
+                                    print >> sys.stderr, "%s\t[%d, %d] (%d) %d " % (chrom, alignedread.pos, alignedread.pos+alignedread.rlen, alignedread.rlen, alignedread.is_reverse )
+                                    print >> sys.stderr, "\t[%d, %d] (%d) " % (exon.start, exon.end, exon.end-exon.start)
+                                    print >> sys.stderr, "\n"
+                                gene.readcount += 1
                                 matched = True
                                 matched_exon = True
-                                break
+                                if gene.strand == -1:
+                                    pos = exon.pos_cds + (exon.end - alignedread.pos)
+                                else:
+                                    pos = exon.pos_cds + (alignedread.pos - exon.start)
+                                poslist.append(pos)
+
+                                global _debug
+                                if _debug:
+                                    print "%s matched %s:%s" % (alignedread.qname, gene.name, gene.common_name)
+                                
+                                break # for exon in exonlist
 
                 # if the read matched this gene, stop looking.
                 if matched:
-                    break
-
+                    break   #  for gene in knowngenes[chrom]
+                    
             if not matched:
                 unmatched += 1
                 if not matched_gene:
@@ -226,32 +327,63 @@ def main(argv = None):
                     unmatched_strand += 1
                 elif not matched_exon:
                     unmatched_exon += 1
+            else:
+                nmatched += 1
+
+            # temporarily limit number of reads to get a sense of whather this is working.
             
+            if match_limit != None and nmatched >= match_limit:
+                break
 
     finally:
         if samfile is not None:
             samfile.close()
 
-    print "\n%d reads processed.\n" % (nreads)
-    print "%d matched an exon within a gene.\n" % (nreads - unmatched)
-    print "%d did not match." % (unmatched)
-    print "\t%d did not match any gene" % (unmatched_gene)
-    print "\t%d were on the wrong strand" % (unmatched_strand)
-    print "\t%d did not match an exon" % (unmatched_exon)
+#     print "\n%d reads processed.\n" % (nreads)
+#     print "%d matched an exon within a gene.\n" % (nreads - unmatched)
+#     print "%d did not match." % (unmatched)
+#     print "\t%d did not match any gene" % (unmatched_gene)
+#     print "\t%d were on the wrong strand" % (unmatched_strand)
+#     print "\t%d did not match an exon" % (unmatched_exon)
 
-    return 0
+    return poslist
+    # END process_reads()
 
 
-# determine whether the exon "contains" the read
-#
-def overlap(read, feature):
-    assert feature.start < feature.end 
-    return (read.pos >=  feature.start and read.pos+read.rlen <= feature.end)
-                
-def strands_match(read, gene):
-    assert gene.strand == -1 or gene.strand == 1
-    return (read.is_reverse and gene.strand == -1) or (not read.is_reverse and gene.strand == 1)
-                
+def graph_startpos(startpos, range_str):
+    """
+    Make a histogram of normally distributed random numbers and plot the
+    analytic PDF over it
+    """
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    if range_str != None:
+        parts = range_str.split(':')
+        low = int(parts[0])
+        high = int(parts[1])
+        n, bins, patches = plt.hist(startpos, high-low, range=(low, high), histtype='bar')
+    else:
+        n, bins, patches = plt.hist(startpos, 900, histtype='bar')
+
+        
+    # the histogram of the data with histtype='step'
+    #n, bins, patches = plt.hist(startpos, 50, normed=1, histtype='stepfilled')
+    plt.setp(patches, 'facecolor', 'g', 'alpha', 0.75)
+
+    ax.set_xlabel('CDS Position [nt from start]')
+    ax.set_ylabel('Read 5\' ends')
+    ax.set_title(r'$\mathrm{Count\ of\ read\ alignments\ per\ gene}$')
+
+    plt.show()
+
+
+
+
+
+
+
 
 def usage(msg = None):
     if msg is not None:

@@ -13,18 +13,20 @@ This script run the test1 or test2 over a machine.
 
 OPTIONS:
    -h      Show this message
-   -t      Test type, can be ‘test1′ or ‘test2′
-   -r      Server address
-   -p      Server root password
+   -s      calculate statistics only
+   -g      reference genome (mm9, hg18, or hg19)
+   -a      adapter (default is ATCTCGTATGCCGTCTTCTGCTTG)
    -v      Verbose
 EOF
 }
 
 VERBOSE=
 STATONLY=
-while getopts "hsv" OPTION
+REF_GENOME=mm9
+ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
+while getopts "hsvg:a:" OPTION
 do
-     case $OPTION in
+     case "${OPTION}" in
          h)
              usage
              exit 1
@@ -33,6 +35,20 @@ do
              STATSONLY=1
 	     echo "stats only"
              ;;
+         g)
+	     case "${OPTARG}" in 
+		 "mm9" | "hg18" | "hg19")
+ 		     REF_GENOME="${OPTARG}"
+		     ;;
+		 *)
+		     usage
+		     exit
+		     ;;
+	     esac
+	     ;;
+         a)
+	     ADAPTER="${OPTARG}"
+	     ;;
          v)
              VERBOSE=1
              ;;
@@ -42,6 +58,40 @@ do
              ;;
      esac
 done
+
+case "${REF_GENOME}" in 
+    "mm9")
+ 	INDEX_BASE="mm9/mm9"
+	RRNA_BASE="mm9/rrna"
+	REFSEQ_BASE="mm9"
+	;;
+    "hg18")
+ 	INDEX_BASE="hg18/hg18"
+	RRNA_BASE="hg18/rrna"
+	REFSEQ_BASE="hg18"
+	;;
+    "hg19")
+ 	INDEX_BASE="hg19/hg19"
+	RRNA_BASE="hg19/rrna"
+	REFSEQ_BASE="hg19"
+	;;
+    *)
+	usage
+	exit
+	;;
+esac
+
+# getopts will not change the positional parameter set — if you want
+# to shift it, you have to do it manually after processing:
+shift $((OPTIND-1))
+
+rawreads="$1"
+echo "Raw reads is ${rawreads}"
+
+# everything after last '/'
+basename=${rawreads##*/}
+# everything before last '.'
+basename=${basename%.*}
 
 
 logfile=/tmp/mylog
@@ -68,17 +118,9 @@ exec 2>errors.txt
 declare -A reads
 declare -A alignments
 
-ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
 MORRIS="/home/csw/Morris-Lab"
-REFSEQ="${MORRIS}/ref-seq"
+REFDIR="/usr/local/share/genome"
 SCRIPTS="${MORRIS}/scripts"
-
-rawreads="$1"
-
-# everything after last '/'
-basename=${rawreads##*/}
-# everything before last '.'
-basename=${basename%.*}
 
 # If output is to a terminal, Start spinner
 if [ -t "1" ]; then
@@ -94,25 +136,29 @@ then
     echo "fastx_clipper returned $?" >&2
 
     log_msg "aligning to rRNA bowtie..."
-    bowtie --al contaminated.fq --un uncontaminated.fq /home/csw/Morris-Lab/ref-seq/contaminants/contaminants ${basename}.multilen.fastq -S  >${basename}.rrna.sam  
+    bowtie --al rrna.fq --un non-rrna.fq "${RRNA_BASE}" ${basename}.multilen.fastq -S  >${basename}.rrna.sam  
     echo "bowtie returned $?" >&2
 
-    goodreads=$(readc uncontaminated.fq)
+    goodreads=$(readc non-rrna.fq)
     log_msg "aligning ${goodreads} reads to  MM9 genome with tophat..."
-    tophat --segment-length 10 --segment-mismatches 0 -G ~/Morris-Lab/ref-seq/mm9/refseq_knowngenes.gtf  /mm9/mm9 uncontaminated.fq
+    tophat --segment-length 10 --segment-mismatches 0 -G ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf  "/${INDEX_BASE}"  non-rrna.fq
     echo "tophat returned $?" >&2
 
     log_msg "filtering out imperfect alignments..."
     samtools view -h tophat_out/accepted_hits.bam | awk '/^@/ || /NM:i:0\>/'| samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
     
+    log_msg "filtering out alignments with junctions..."
+    samtools view -h tophat_out/accepted_hits_perfect.bam | awk '/^@/ || $6 ~ /^[0-9]+M$/'| samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
+    
     log_msg "detecting exon converage..."
     # intersect those alignmets with exons of known genes
-    intersectBed -abam tophat_out/accepted_hits_perfect.bam -b ${REFSEQ}/mm9/refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed > tophat_out/overlaps_exons.bed
+    intersectBed -abam tophat_out/accepted_hits_nojunc.bam -b ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed > tophat_out/overlaps_exons.bed
     echo "intersectBed returned $?" >&2
 
     # Eliminate reads that map to more than a single gene
     awk '{ print $_"\t"$4; }' <tophat_out/overlaps_exons.bed | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >tophat_out/overlaps_exons_uniq.bed
-fi
+
+fi  # END !STATSONLY
 
 
 # collect statistics
@@ -124,7 +170,7 @@ reads[uncalled]=$(( ${reads[adapter]} - ${stats[4]} ))
 
 
 log_msg "Counting rRNA alignments..."
-reads[rrna]=$(readc uncontaminated.fq)
+reads[rrna]=$(readc non-rrna.fq)
 
 # Count how many failed to align
 log_msg "Counting failed alignments..."
@@ -137,6 +183,12 @@ log_msg "Counting imperfect alignments..."
 reads[imperfect]=$(($(samtools view tophat_out/accepted_hits_perfect.bam | awk '{print $1}' | sort|uniq|wc -l) ))
 
 alignments[imperfect]=$(samtools view tophat_out/accepted_hits_perfect.bam | wc -l)
+
+# Count how many alignments without junctions
+log_msg "Counting non-junction alignments..."
+reads[nojunc]=$(($(samtools view tophat_out/accepted_hits_nojunc.bam | awk '{print $1}' | sort|uniq|wc -l) ))
+
+alignments[nojunc]=$(samtools view tophat_out/accepted_hits_nojunc.bam | wc -l)
 
 # how many aligned reads fell outside of known exons
 log_msg "Counting reads outside of exons..."
@@ -151,7 +203,7 @@ alignments[mult_gene]=$(wc -l <tophat_out/overlaps_exons_uniq.bed)
     
 log_msg "preparing coverage statistics..."
 # prepare experimental statistics
-python ${SCRIPTS}/rpos_dist.py ${REFSEQ}/mm9/refseq_knowngenes.txt tophat_out/overlaps_exons_uniq.bed  >tophat_out/aligned_position_stats.txt 2>rpos_dist_stats.txt
+python ${SCRIPTS}/rpos_dist.py ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.txt tophat_out/overlaps_exons_uniq.bed  >tophat_out/aligned_position_stats.txt 2>rpos_dist_stats.txt
 echo "python rpos_dist.py returned $?" >&2
 
 log_msg "graphing results..."
@@ -167,6 +219,7 @@ printf "%20s\t%d\t%d\n" "uncalled base 'N'" ${reads[uncalled]} ${alignments[unca
 printf "%20s\t%d\t%d\n" "rRNA-spike" ${reads[rrna]} ${alignments[rrna]}
 printf "%20s\t%d\t%d\n" "unaligned" ${reads[unaligned]} ${alignments[unaligned]}
 printf "%20s\t%d\t%d\n" "imperfect alignments" ${reads[imperfect]} ${alignments[imperfect]}
+printf "%20s\t%d\t%d\n" "nojunc alignments" ${reads[nojunc]} ${alignments[nojunc]}
 printf "%20s\t%d\t%d\n" "outside exons" ${reads[introns]} ${alignments[introns]}
 printf "%20s\t%d\t%d\n" "multiple genes" ${reads[mult_gene]} ${alignments[mult_gene]}
 

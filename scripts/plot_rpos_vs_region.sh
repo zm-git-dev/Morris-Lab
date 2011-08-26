@@ -12,80 +12,73 @@
 #
 # $ python  scripts/test.py  ~/Morris-Lab/ref-seq/mm9/refseq_knowngenes.txt overlaps_exons_uniq.bed >out.txt
 #
-# w
+# 
 # $ gnuplot ribopos_vs_genecnd.pl <out.txt
 
 
 TMPFILE=`mktemp`
-# TMPFILE=tmpfile
 
 function on_exit()
 {
-    rm -f "$TMPFILE.*"
+    rm -f "$TMPFILE"*
 }
 
-# trap on_exit EXIT
+trap on_exit EXIT
 
-awk '{print >"'$TMPFILE'."$5 } ' -
+awk '!/^#/ {print >"'$TMPFILE'."$5; print $7,$2 >"'$TMPFILE'" } ' -
+
+sort -k 1n $TMPFILE | uniq | awk '{print $1}' | uniq  -c >$TMPFILE.data
 
 for i in $TMPFILE.*; 
 do  
     awk '!/^#/ {print $6,$2}' <$i | sort -k 1n | uniq |  awk '{print $1}' | uniq -c >$i.data 
 done
 
+X11TERM="set terminal X11  size 1150,900"
+PSTERM="set terminal postscript landscape color lw 0 \"Helvetica\" 12;  \
+        set out 'plots.eps'"
 
-gnuplot  <<EOF
+PNGTERM="set terminal png;  \
+        set out 'plots.png'"
 
-# -persist
-set   autoscale                        # scale axes automatically
+gnuplot -persist <<EOF
+
+set term push; 
+$X11TERM
+
+set multiplot
+set size .5, .5
+
+set autoscale                          # scale axes automatically
 unset log                              # remove any log-scaling
 unset label			       # remove any previous labels
 set xtic auto                          # set xtics automatically
 set ytic auto                          # set ytics automatically
-set xlabel "Position in region"
 set ylabel "Number of genes"
+set pointsize 1
 
 
-#set xrange [0:100]
+set origin 0.0, 0.50   # upper-left
+set xlabel "Position on gene"
+set title "Whole gene position vs. Gene count"
+plot  "$TMPFILE.data" using 2:1 title '' pt 13 ps 1
 
-
-set term x11 title "3'-UTR" position 0,100
-set title "3'-UTR position vs. Gene count"
-plot  "$TMPFILE.3'-UTR.data" using 2:1 title '' 
-
-set term push
-set terminal postscript landscape color lw 15 "Helvetica" 20
-set size 1,1
-set out '3primeUTR.eps'
-replot
-set term pop
-
-set term x11 2 title "5'-UTR" position 1300,100
+set origin 0.50, 0.50   # upper-right
+set xlabel "Position in 5' region"
 set title "5'-UTR position vs. Gene count"
-plot  "$TMPFILE.5'-UTR.data" using 2:1 title '' 
+plot  "$TMPFILE.5'-UTR.data" using 2:1 title '' pt 13 ps 1
 
-set term push
-set terminal postscript landscape color lw 15 "Helvetica" 20
-set size 1,1
-set out '5primeUTR.eps'
-replot
-set term pop
+set origin 0.50, 0.0   # lower-right
+set xlabel "Position in 3' region"
+set title "3'-UTR position vs. Gene count"
+plot  "$TMPFILE.3'-UTR.data" using 2:1 title '' pt 13 ps 1
 
-set term x11 1 title "CDS" position 650,100
+set origin 0.0, 0.0   # lower-left
+set xlabel "Position in CDS region"
 set title "CDS position vs. Gene count"
+plot  "$TMPFILE.CDS.data" using 2:1 title '' pt 13 ps 1
 
-binwidth=5
-#set bmargin 10 
-bin(x,width)=width*floor(x/width)
-#plot "$TMPFILE.CDS.data" using (bin(\$2,binwidth)):1 smooth freq title ''  with boxes
-set border -1 lw 0
-plot  "$TMPFILE.CDS.data" using 2:1 title '' 
-
-set term push
-set terminal postscript landscape color lw 15 "Helvetica" 20
-set size 1,1
-set out 'CDS.eps'
-replot
+unset multiplot
 set term pop
 
 

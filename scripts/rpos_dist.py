@@ -251,7 +251,7 @@ class GeneNotFound(exceptions.Exception):
         return
 		
     def __str__(self):
-        print "","An Gene Not Found exception occured!"
+        print "","A Gene Not Found exception occured!"
 
 # main() takes an optional 'argv' argument, which allows us to call it
 # from the interactive Python promp.

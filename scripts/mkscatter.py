@@ -120,9 +120,9 @@ def main(argv = None):
     
     ax.set_title(title)
 
-    fig.savefig("fig.%s.png" % (ylabel), format="png")
+    #fig.savefig("fig.%s.png" % (ylabel), format="png")
     
-    #plt.show()
+    plt.show()
 
     return 0
 

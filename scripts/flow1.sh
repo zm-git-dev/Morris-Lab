@@ -13,15 +13,17 @@ This script run the test1 or test2 over a machine.
 
 OPTIONS:
    -h      Show this message
-   -t      Test type, can be ‘test1′ or ‘test2′
-   -r      Server address
-   -p      Server root password
+   -s      calculate statistics only
+   -g      reference genome (mm9, hg18, or hg19)
+   -a      adapter (default is ATCTCGTATGCCGTCTTCTGCTTG)
    -v      Verbose
 EOF
 }
 
 VERBOSE=
 STATONLY=
+REF_GENOME=mm9
+ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
 while getopts "hsv" OPTION
 do
      case $OPTION in
@@ -33,6 +35,17 @@ do
              STATSONLY=1
 	     echo "stats only"
              ;;
+         g)
+	     case "${OPTARG}" in 
+		 "mm9" | "hg18" | "hg19")
+ 		     REF_GENOME="${OPTARG}"
+		     ;;
+		 *)
+		     usage
+		     exit
+		     ;;
+	     esac
+	     ;;
          v)
              VERBOSE=1
              ;;

@@ -4,10 +4,6 @@ import getopt
 import math
 import pprint
 
-import matplotlib.pyplot as plt
-import matplotlib.mlab as mlab
-import matplotlib.ticker as ticker
-
 import numpy as np
 from array import array
 from itertools import ifilter
@@ -93,6 +89,13 @@ def usage(msg = None):
 
 
 # Output in FASTA format suitable for use by IGV
+# First collapse the genome then output the FASTA data.
+#
+# By "collapse genome" I mean eliminate introns.  For a given gene,
+# leave the first exon in place and shift every subsequent exon toward
+# the first exon to eliminate gaps.  the same algorith applies to
+# genes on the reverse strand, only those will be shifted in the
+# opposit direction.
 #
 def collapse_genome(knowngenes):
     for k, v in chromosomes:
@@ -100,32 +103,20 @@ def collapse_genome(knowngenes):
             if (gene.strand == 1):
                 # forward strand
                 for i in range(2, len(gene.exons)):
-                    exon = gene.exons[i]
-                    # forward strand
+                    exon = gene.exons[i] 
                     previous = gene.exons[i-1]
                     intron_len = exon.start - previous.end
                     exon.start -= intron_len
                     exon.end -= intron_len
 
             else:
+                # reverse strand
                 for i in range(len(gene.exons)-1, 1):
                     exon = gene.exons[i]
-                    # reverse strand
-/* continue work here. */
-
-
                     previous = gene.exons[i+1]
-                   intron_len = previous.start - exon.end
-                   exon.start += intron_len
-                   exon.end += intron_len
-                    
-                    if (gene.cds.start >= exon.start and gene.cds.start <= exon.end):
-
-                    exon.pos_cds
-            
-
-
-
+                    intron_len = previous.start - exon.end
+                    exon.start += intron_len
+                    exon.end += intron_len
 
 
    
