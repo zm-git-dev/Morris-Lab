@@ -20,11 +20,13 @@ OPTIONS:
 EOF
 }
 
+USE_BOWTIE=
 VERBOSE=
 STATONLY=
+MISMATCHES=$(( 0 ))
 REF_GENOME=mm9
 ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
-while getopts "hsvg:a:" OPTION
+while getopts "hsvbm:g:a:" OPTION
 do
      case "${OPTION}" in
          h)
@@ -36,15 +38,13 @@ do
 	     echo "stats only"
              ;;
          g)
-	     case "${OPTARG}" in 
-		 "mm9" | "hg18" | "hg19")
- 		     REF_GENOME="${OPTARG}"
-		     ;;
-		 *)
-		     usage
-		     exit
-		     ;;
-	     esac
+ 	     REF_GENOME="${OPTARG}"
+	     ;;
+         m)
+ 	     MISMATCHES=$(( ${OPTARG} ))
+	     ;;
+         b)
+ 	     USE_BOWTIE=1
 	     ;;
          a)
 	     ADAPTER="${OPTARG}"
@@ -75,7 +75,13 @@ case "${REF_GENOME}" in
 	RRNA_BASE="hg19/rrna"
 	REFSEQ_BASE="hg19"
 	;;
+    "yeast"|"s_cerevisiae")
+ 	INDEX_BASE="s_cerevisiae/s_cerevisiae"
+	RRNA_BASE="mm9/rrna"
+	REFSEQ_BASE="s_cerevisiae"
+	;;
     *)
+	echo REFGENOME
 	usage
 	exit
 	;;
@@ -127,12 +133,22 @@ if [ -t "1" ]; then
     ${SCRIPTS}/spinner.sh &
 fi
 
+for i in ${rawreads} ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed
+do
+    if [ ! -r "$i" ]
+    then
+	echo Cannot find input file "$i".
+	echo This file is necessary to process this sample.
+	exit 1;
+    fi
+done
+       
 
 if [[ "$STATSONLY" -ne 1 ]]
 then
     log_msg "Trimming adapter and filtering bad reads..."
 
-    fastx_clipper -a ${ADAPTER} -l 20 -Q33 -v < ${rawreads} > ${basename}.multilen.fastq 2>clipstats.txt
+    fastx_clipper -a "${ADAPTER}" -l 20 -Q33 -v < ${rawreads} > ${basename}.multilen.fastq 2>clipstats.txt
     echo "fastx_clipper returned $?" >&2
 
     log_msg "aligning to rRNA bowtie..."
@@ -140,12 +156,30 @@ then
     echo "bowtie returned $?" >&2
 
     goodreads=$(readc non-rrna.fq)
-    log_msg "aligning ${goodreads} reads to  MM9 genome with tophat..."
-    tophat --segment-length 10 --segment-mismatches 0 -G ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf  "/${INDEX_BASE}"  non-rrna.fq
-    echo "tophat returned $?" >&2
+    if [ -z "${USE_BOWTIE}" ]
+    then
+	log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with tophat..."
+	tophat --segment-length 10 --segment-mismatches 0 -G ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf  "/${INDEX_BASE}"  non-rrna.fq
+	echo "tophat returned $?" >&2
+    else
+	echo "using bowtie for main aliagnment" >&2
+	log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with bowtie..."
+	bowtie --best --sam "/${INDEX_BASE}"  non-rrna.fq | awk '$3!="*"' >accepted_hits.sam
+	echo "bowtie returned $?" >&2
+	mkdir tophat_out
+	samtools view -Sb -o tophat_out/accepted_hits.bam accepted_hits.sam
+    fi
 
     log_msg "filtering out imperfect alignments..."
-    samtools view -h tophat_out/accepted_hits.bam | awk '/^@/ || /NM:i:0\>/'| samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
+    samtools view -h tophat_out/accepted_hits.bam        \
+         | awk '/^@/ {print}
+                !/^@/ { for (i = 1; i <= NF; i++) 
+	                  if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
+ 	                      print ;
+                              break;
+                          }
+                      }' \
+	 | samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
     
     log_msg "filtering out alignments with junctions..."
     samtools view -h tophat_out/accepted_hits_perfect.bam | awk '/^@/ || $6 ~ /^[0-9]+M$/'| samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
@@ -190,19 +224,30 @@ reads[nojunc]=$(($(samtools view tophat_out/accepted_hits_nojunc.bam | awk '{pri
 
 alignments[nojunc]=$(samtools view tophat_out/accepted_hits_nojunc.bam | wc -l)
 
-# how many aligned reads fell outside of known exons
-log_msg "Counting reads outside of exons..."
-reads[introns]=$(awk '{print $4}' <tophat_out/overlaps_exons.bed | sort|uniq|wc -l)
-alignments[introns]=$(wc -l <tophat_out/overlaps_exons.bed)
+# how many aligned reads fell within known exons
+log_msg "Counting reads that are contained within exons..."
+reads[exons]=$(awk '{print $4}' <tophat_out/overlaps_exons.bed | sort|uniq|wc -l)
+alignments[exons]=$(wc -l <tophat_out/overlaps_exons.bed)
 
-# count reads that overlap multiple features at a single locus
-log_msg "Counting overlaps with multiple features..."
+# exclude reads that overlap multiple features (genes) at a locus
+log_msg "Counting overlaps with single features..."
 reads[mult_gene]=$(awk '{ print $4; }' <tophat_out/overlaps_exons_uniq.bed | sort | uniq -c | wc -l )
 
 alignments[mult_gene]=$(wc -l <tophat_out/overlaps_exons_uniq.bed)
     
+#
+# THIS IS IT!  This next call to rpos_dist.py is the heart of this
+# routine and the main reason we have prepared the reads up to this point.
+#
+# Now that we know which gene each read maps to, and each mappings is
+# unique, we can calculate where the read falls along the gene.  Not
+# only do we get information abotu which region of the gene the read
+# is in (5'-UTR, CDS, or 3'-UTR), we also get information about what
+# reading frame the read is aligned with.  Since each read represents
+# a ribosome-protected tag, we can derive information about ribosome
+# density on genes.
+
 log_msg "preparing coverage statistics..."
-# prepare experimental statistics
 python ${SCRIPTS}/rpos_dist.py ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.txt tophat_out/overlaps_exons_uniq.bed  >tophat_out/aligned_position_stats.txt 2>rpos_dist_stats.txt
 echo "python rpos_dist.py returned $?" >&2
 
@@ -216,12 +261,12 @@ printf "%20s\t%d\t%d\n" "Raw reads" ${reads[raw]} ${alignments[raw]}
 printf "%20s\t%d\t%d\n" "too short (<20nt)" ${reads[tooshort]} ${alignments[tooshort]}
 printf "%20s\t%d\t%d\n" "adapter only" ${reads[adapter]} ${alignments[adapter]}
 printf "%20s\t%d\t%d\n" "uncalled base 'N'" ${reads[uncalled]} ${alignments[uncalled]}
-printf "%20s\t%d\t%d\n" "rRNA-spike" ${reads[rrna]} ${alignments[rrna]}
-printf "%20s\t%d\t%d\n" "unaligned" ${reads[unaligned]} ${alignments[unaligned]}
-printf "%20s\t%d\t%d\n" "imperfect alignments" ${reads[imperfect]} ${alignments[imperfect]}
-printf "%20s\t%d\t%d\n" "nojunc alignments" ${reads[nojunc]} ${alignments[nojunc]}
-printf "%20s\t%d\t%d\n" "outside exons" ${reads[introns]} ${alignments[introns]}
-printf "%20s\t%d\t%d\n" "multiple genes" ${reads[mult_gene]} ${alignments[mult_gene]}
+printf "%20s\t%d\t%d\n" "rRNA/spike-in" ${reads[rrna]} ${alignments[rrna]}
+printf "%20s\t%d\t%d\n" "aligned" ${reads[unaligned]} ${alignments[unaligned]}
+printf "%20s\t%d\t%d\n" "perfect alignment" ${reads[imperfect]} ${alignments[imperfect]}
+printf "%20s\t%d\t%d\n" "nojunc alignment" ${reads[nojunc]} ${alignments[nojunc]}
+printf "%20s\t%d\t%d\n" "mapped exons" ${reads[exons]} ${alignments[exons]}
+printf "%20s\t%d\t%d\n" "single genes" ${reads[mult_gene]} ${alignments[mult_gene]}
 
 echo
 cat rpos_dist_stats.txt

@@ -225,14 +225,16 @@ class Stats:
         region_str = "\t{0:>9s} {1:7d}  {2:5.2f}%\n"
         rep += "Regions:\n"
         
-        rep += region_str.format("5'-UTR", self.region_5prime,
-                                 float(self.region_5prime)/float(self.reads_mapped)*100.0)
-        rep += region_str.format("3'-UTR", self.region_3prime,
-                                 float(self.region_3prime)/float(self.reads_mapped)*100.0)
-        rep += region_str.format("coding", self.region_coding,
-                                 float(self.region_coding)/float(self.reads_mapped)*100.0)
-        rep += region_str.format("noncoding", self.region_noncoding,
-                                 float(self.region_noncoding)/float(self.reads_mapped)*100.0)
+        if (self.reads_mapped != 0):
+            rep += region_str.format("5'-UTR", self.region_5prime,
+                                     float(self.region_5prime)/float(self.reads_mapped)*100.0)
+            rep += region_str.format("3'-UTR", self.region_3prime,
+                                     float(self.region_3prime)/float(self.reads_mapped)*100.0)
+            rep += region_str.format("coding", self.region_coding,
+                                     float(self.region_coding)/float(self.reads_mapped)*100.0)
+            rep += region_str.format("noncoding", self.region_noncoding,
+                                     float(self.region_noncoding)/float(self.reads_mapped)*100.0)
+
         
         return rep
     pass
@@ -330,6 +332,7 @@ def read_knowngenes(known_genes, opt, stats):
 
     # read in the known genes.
     #
+    in_handle = None
     try:
         in_handle = open(known_genes)
         
@@ -346,7 +349,12 @@ def read_knowngenes(known_genes, opt, stats):
             gene.readcount = 0
             gene.name = g_row["name"]
 
-            gene.common_name = g_row["name2"]
+            # s_cerevisiae genomes don't have common names, so allow
+            # for this column to be missing.  It doesn't have any
+            # significant downstream effect.
+            #
+            if "name2" in g_row:
+                gene.common_name = g_row["name2"]
 
 # At one point I did not count non-coding genes.  Theoretically we
 # should not have any reads from inside non-coding RNA because
@@ -375,17 +383,17 @@ def read_knowngenes(known_genes, opt, stats):
             
             es_reader = csv.reader([g_row["exonStarts"]], delimiter=',')
             ee_reader = csv.reader([g_row["exonEnds"]], delimiter=',')
-            ef_reader = csv.reader([g_row["exonFrames"]], delimiter=',')
+            #ef_reader = csv.reader([g_row["exonFrames"]], delimiter=',')
             estart_list = es_reader.next()
             eend_list = ee_reader.next()
-            efrm_list = ef_reader.next()
+            #efrm_list = ef_reader.next()
             exon_list = list()
             gene.len = 0
             for i in xrange(int(g_row["exonCount"])):
                 exon = Exon()
                 exon.start = int(estart_list[i])
                 exon.end = int(eend_list[i])
-                exon.frame = int(efrm_list[i])
+                #exon.frame = int(efrm_list[i])
                 exon_list.append(exon)
                 gene.len += exon.len()
 
@@ -460,10 +468,17 @@ def find_gene(knowngenes, row, opt, stats):
     if genename != None and genename != gname:
         raise GeneNotFound
 
-    nexon = int( ename.split('_')[3])
+
+    # Extract the excon number from the combined gene_exon field.  Be
+    # careful to handle the case of a gene name that itself has an '_'
+    # in its name.
+    #
+    nexon = int( ename[ename.index('_exon'):].split('_')[2])
+
     # enum = 2
     chrom = row['rchr']
     # chrom = chr1
+
     if chrom not in knowngenes:
         if chrom not in warnings:
             print >> sys.stderr, 'Warning:   Could not find known genes for chromosome "%s"' % (chrom)
@@ -471,17 +486,15 @@ def find_gene(knowngenes, row, opt, stats):
             raise GeneNotFound
 
     # Some genes appear in the genome more than once,
-    # e.g. NM_001110250.  We want to flag when that occurs.
-    #
-    # It is similar to when a read maps to multiple loci on
-    # the genome, or maps to a single loci with multple genes.
-    # It can be ambiguous which version of the gene the read
-    # should be assigned to.  The default behavior is to skip
-    # those reads but we give you the option to include them.
+    # e.g. NM_001110250 in mm9.  These multiple entries usually
+    # represent alternative isoforms of the same gene, but it is
+    # ambiguous which version of the gene the read should be assigned
+    # to.  The default behavior is to skip those reads but we give you
+    # the option to include them.
     #
     # We also collect and display statistics related to how
-    # many reads mapped to genes like this that have multiple
-    # loci.
+    # many reads mapped to multiple-entry genes like this.
+    #
 
     if (len((knowngenes[chrom])[gname]) > 1):
         stats.multi_locus_read += 1
@@ -501,7 +514,7 @@ def find_gene(knowngenes, row, opt, stats):
             break
 
     if (not found):
-        print >> sys.stderr, 'Warning:   Could not find gene for read "%s""' % (row['rname'])
+        print >> sys.stderr, 'Warning:   Could not find gene "%s" for read "%s"' % (gname, row['rname'])
         raise GeneNotFound
 
     if (not gname in stats.genes_covered):

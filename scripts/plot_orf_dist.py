@@ -2,6 +2,8 @@
 # uses information from the rpos_dist.py
 # plots mod%3 of CDS position.
 # python /home/csw/Morris-Lab/scripts/test.py  /usr/local/share/genome/mm9/mm9_refseq_knowngenes.txt tophat_out/overlaps_exons_uniq.bed | awk '{print $4}'
+
+
 import csv
 import re
 import sys
@@ -29,41 +31,47 @@ from Bio import SeqFeature
 #from BCBio.GFF import (GFF3Writer, GFFExaminer, GFFParser, DiscoGFFParser)
 
 import pysam
+from pylab import *
+from collections import defaultdict
+
 
 global _debug               
 _debug = False                  
 
 import fileinput
 
-def graph_startpos(startpos, range_str, gene_name):
+
+def graph_startpos(startpos, gene_name):
     """
     Make a histogram of normally distributed random numbers and plot the
     analytic PDF over it
     """
 
+    d = defaultdict(int)
+    x = arange(-1, 4)
+    print x
+    for i in x:
+        d[i] = 0
+
+    for pos in startpos:
+        d[pos+1] += 1
+        
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    plt.bar(x, d.values())
+    print d.values()
+    plt.xticks( x + 0.5 ,  (" ", 0, 1, 2, " ") )
 
-    if range_str != None:
-        parts = range_str.split(':')
-        low = int(parts[0])
-        high = int(parts[1])
-        n, bins, patches = plt.hist(startpos, high-low, range=(low, high), histtype='bar')
-    else:
-        n, bins, patches = plt.hist(startpos, 900, histtype='bar')
-
-        
-    # the histogram of the data with histtype='step'
-    #n, bins, patches = plt.hist(startpos, 50, normed=1, histtype='stepfilled')
-    plt.setp(patches, 'facecolor', 'g', 'alpha', 0.75)
-
-    ax.set_xlabel('CDS Position [nt from start]')
-    ax.set_ylabel('Read 5\' ends')
-    fig.suptitle('Count of read alignments per gene', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Reading Frame')
+    ax.set_ylabel('# Reads')
+    fig.suptitle('Distribution of open reading frames', fontsize=14, fontweight='bold')
     if (gene_name != None):
         ax.set_title("Restricted to gene {0}".format(gene_name), fontsize=12)
 
+
     plt.show()
+
 
 
 
@@ -73,7 +81,6 @@ def main(argv = None):
     
     gene_name = None
     match_limit = None
-    range_str = None
     print_genelist = False
     
     try:
@@ -122,7 +129,7 @@ def main(argv = None):
         process_alignments(sys.stdin, gene_name, poslist)
 
     if (len(poslist) > 0):
-        graph_startpos(poslist, range_str, gene_name)
+        graph_startpos(poslist, gene_name)
 
     return 0
 
@@ -131,7 +138,7 @@ def process_alignments(in_handle, gene_name, poslist):
         if not re.match("^#", line):
             [rname, nmname, cname, cds_pos, rest] = line.split(None, 4)
             if (gene_name == None or gene_name == nmname or gene_name == cname):
-                poslist.append(int(cds_pos))
+                poslist.append(int(cds_pos)%3)
                 
 
 
