@@ -4,7 +4,7 @@
 #
 # To visualize the results from this routine,
 #
-# $ python  /home/csw/Morris-Lab/scripts/test.py  /home/csw/Morris-Lab/ref-seq/mm9/refseq_knowngenes.txt overlaps_exons_uniq.bed >out.txt
+# $ python  ${SCRIPTS}/test.py  /home/csw/Morris-Lab/ref-seq/mm9/refseq_knowngenes.txt overlaps_exons_uniq.bed >out.txt
 #
 # $ sed '/^#/d' <out.txt | sort -k 6n | uniq -c -f 5 | awk '{print $1, $7}' >out2.txt
 #
@@ -14,6 +14,24 @@
 # set title "Read position vs. Read count"
 # plot  "out2.txt" using 2:1 title '' with lines
 # EOF
+#
+# fragments are assigned to regions according to the following
+# criteria.   These were taken from:
+#
+#    Genome-Wide Analysis in Vivo of Translation with Nucleotide
+#    Resolution Using Ribosome Profiling
+#    Nicholas T. Ingolia,* Sina Ghaemmaghami, John R. S. Newman, Jonathan S. Weissman
+#    Published 12 February 2009 on Science Express
+#    DOI: 10.1126/science.1168978
+#
+# Feature                Fragment 5' End
+#                        Start                            End
+# Protein-coding gene    16 nt before first base          14 nt before last base
+# 5' UTR                 start of annotated UTR           17 nt before first base of CDS
+# 3' UTR                 13 nt before last base of CDS    28 nt before end of annotated UTR
+# intron                 first base of intron             8 nt before last base of intron
+# Non-coding RNA         12 nt before first base          12 nt after last base
+# 
 #
 
 import csv
@@ -211,10 +229,10 @@ class Stats:
 
     def __str__(self):
         rep = ""
-        rep += "reads processed:   {0:d}\n".format(self.reads_processed)
-        rep += "reads mapped:      {0:d}\n".format(self.reads_mapped)
-        rep += "reads mapped to \n"
-        rep += "multi_locus genes: {0:d}\n".format(self.multi_locus_read)
+        rep += "reads:\n"
+        rep += "\tprocessed:\t{0:d}\n".format(self.reads_processed)
+        rep += "\tmapped:\t{0:d}\n".format(self.reads_mapped)
+        rep += "\tisoforms:\t{0:d}\n".format(self.multi_locus_read)
 
         nreads = 0
         for v in self.genes_covered.values():
@@ -222,7 +240,7 @@ class Stats:
         ngenes = len(self.genes_covered.values())
         rep += "{0:d} gene(s) covered in {1:d} reads\n".format(ngenes, nreads)
 
-        region_str = "\t{0:>9s} {1:7d}  {2:5.2f}%\n"
+        region_str = "\t{0:>9s}\t{1:7d}\t{2:5.2f}%\n"
         rep += "Regions:\n"
         
         if (self.reads_mapped != 0):
@@ -548,8 +566,8 @@ def find_gene(knowngenes, row, opt, stats):
 def process_reads(reads_file, knowngenes, opt, stats):
     match_limit = opt.match_limit
 
-    hdr = "# {0:^35s} {1:^15s} {2:^8s} {3:^5s} {4:^5s} {5:^5s} {6:^5s}"
-    rec = "{0:37s} {1:15s} {2:8s} {3:5d} {4:6s} {5:5.2f} {6:5.2f}"
+    hdr = "#{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}\t{5:s}\t{6:s}"
+    rec = "{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6:.2f}"
 
     try:
         warnings = dict()
@@ -557,7 +575,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
 
         in_handle = open(reads_file)
 
-        print hdr.format("read name", "refseq", "gene", "dCDS", \
+        print hdr.format("read name", "refseq", "gene", "genelen", \
                          "regio", "%", "gene%")
         
         reader = csv.DictReader(in_handle, delimiter='\t',
@@ -625,7 +643,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
                 raise Exception
             
             print rec.format(row['rname'], gene.name, gene.common_name, \
-                             dist_cdr_start, pos_which, pos_pct, gpos_pct)
+                             gene.len, pos_which, pos_pct, gpos_pct)
                 
             nmatched += 1
             if match_limit != None and nmatched >= match_limit:

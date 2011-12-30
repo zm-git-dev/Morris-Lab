@@ -7,26 +7,43 @@
 usage()
 {
 cat << EOF
-usage: $0 options
 
-This script run the test1 or test2 over a machine.
+Align reads to reference genome and calculate position of read 5' ends
+w.r.t. beginning of CDS region.  The input data is extensively
+filtered to eliminate low quality reads and reads that map to
+ribosomal RNA.
+
+usage: `basename $0` [options] <data.fastq>
+
+e.g.,
+
+    `basename $0` liver.fastq 
+    Fully process set of short reads from liver.
+
+
+    `basename $0` -s -g yeast SRR014368.fastq 
+    Only calculate statistics based upon a previous complete run.  Use
+    s_cerevisiae reference genome.
 
 OPTIONS:
    -h      Show this message
    -s      calculate statistics only
    -g      reference genome (mm9, hg18, or hg19)
+   -m      number of mismatches to allow (default is zero)
+   -b      use bowtie instead of tophat (not tested)
    -a      adapter (default is ATCTCGTATGCCGTCTTCTGCTTG)
-   -v      Verbose
 EOF
 }
 
+command_line="$0 $@"
+
 USE_BOWTIE=
-VERBOSE=
 STATONLY=
+LENGTH=20
 MISMATCHES=$(( 0 ))
 REF_GENOME=mm9
 ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
-while getopts "hsvbm:g:a:" OPTION
+while getopts "hsvbm:g:a:l:" OPTION
 do
      case "${OPTION}" in
          h)
@@ -49,9 +66,9 @@ do
          a)
 	     ADAPTER="${OPTARG}"
 	     ;;
-         v)
-             VERBOSE=1
-             ;;
+         l)
+	     LENGTH="${OPTARG}"
+	     ;;
          ?)
              usage
              exit
@@ -77,7 +94,7 @@ case "${REF_GENOME}" in
 	;;
     "yeast"|"s_cerevisiae")
  	INDEX_BASE="s_cerevisiae/s_cerevisiae"
-	RRNA_BASE="mm9/rrna"
+	RRNA_BASE="s_cerevisiae/rrna"
 	REFSEQ_BASE="s_cerevisiae"
 	;;
     *)
@@ -91,14 +108,17 @@ esac
 # to shift it, you have to do it manually after processing:
 shift $((OPTIND-1))
 
+
 rawreads="$1"
 echo "Raw reads is ${rawreads}"
 
-# everything after last '/'
-basename=${rawreads##*/}
-# everything before last '.'
+#
+# Use the name of the file that contains the raw reads to generate the
+# base name of all our output files.
+# 
+basename=`basename ${rawreads}`
 basename=${basename%.*}
-
+echo "basename =:$basename:"
 
 logfile=/tmp/mylog
 
@@ -114,6 +134,43 @@ trap 'exit 0' INT
 function log_msg()
 {
     echo "$*" >>$logfile
+}
+
+function filter_alignments()
+{
+    # "filtering out imperfect alignments..."
+    samtools view -h /dev/stdin   \
+	| awk '# filter out alignments with more than ${MISMATCHES} mismatched bases.
+               /^@/ {print}
+               !/^@/ { for (i = 1; i <= NF; i++) 
+	                 if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) \
+                             && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
+ 	                      print;
+                              count++;
+                              break;
+                          }
+                      }
+		END {
+		    print "reads with fewer than '"${MISMATCHES}"' mismatches:\t", count > "/dev/stderr" # gawk only
+		    }' \
+    	| awk '# filter out alignments with junctions...
+               /^@/ { print }
+               $6 ~ /^[0-9]+M$/ {
+                      print;
+                      count++;
+                      }
+               END {
+                   print "reads without junctions:\t",count > "/dev/stderr"   # gawk only
+                   }' \
+	| samtools view -Sb -o /dev/stdout /dev/stdin \
+	| intersectBed -abam /dev/stdin -b ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed \
+        | awk '# Eliminate reads that map to more than a single gene
+               { print $_"\t"$4; }' | sort -k 13 | uniq -f 12 -u | cut -f 1-12 
+
+    # echo "intersectBed returned $?" >&2
+
+
+    mismatches=$*
 }
 
 # Count reads in a FASTQ file
@@ -146,9 +203,11 @@ done
 
 if [[ "$STATSONLY" -ne 1 ]]
 then
-    log_msg "Trimming adapter and filtering bad reads..."
+    echo "${command_line}" >flow.cmd
 
-    fastx_clipper -a "${ADAPTER}" -l 20 -Q33 -v < ${rawreads} > ${basename}.multilen.fastq 2>clipstats.txt
+    log_msg "Trimming adapter, clipping to ${LENGTH}nt, and filtering bad reads..."
+
+    fastx_clipper -a "${ADAPTER}" -l ${LENGTH} -Q33 -v < ${rawreads} > ${basename}.multilen.fastq 2>clipstats.txt
     echo "fastx_clipper returned $?" >&2
 
     log_msg "aligning to rRNA bowtie..."
@@ -219,13 +278,13 @@ reads[imperfect]=$(($(samtools view tophat_out/accepted_hits_perfect.bam | awk '
 alignments[imperfect]=$(samtools view tophat_out/accepted_hits_perfect.bam | wc -l)
 
 # Count how many alignments without junctions
-log_msg "Counting non-junction alignments..."
+log_msg "Counting alignments within a single exon..."
 reads[nojunc]=$(($(samtools view tophat_out/accepted_hits_nojunc.bam | awk '{print $1}' | sort|uniq|wc -l) ))
 
 alignments[nojunc]=$(samtools view tophat_out/accepted_hits_nojunc.bam | wc -l)
 
 # how many aligned reads fell within known exons
-log_msg "Counting reads that are contained within exons..."
+log_msg "Counting reads that are contained within KNOWN exons..."
 reads[exons]=$(awk '{print $4}' <tophat_out/overlaps_exons.bed | sort|uniq|wc -l)
 alignments[exons]=$(wc -l <tophat_out/overlaps_exons.bed)
 
@@ -239,9 +298,9 @@ alignments[mult_gene]=$(wc -l <tophat_out/overlaps_exons_uniq.bed)
 # THIS IS IT!  This next call to rpos_dist.py is the heart of this
 # routine and the main reason we have prepared the reads up to this point.
 #
-# Now that we know which gene each read maps to, and each mappings is
+# Now that we know which gene each read maps to, and each mapping is
 # unique, we can calculate where the read falls along the gene.  Not
-# only do we get information abotu which region of the gene the read
+# only do we get information about which region of the gene the read
 # is in (5'-UTR, CDS, or 3'-UTR), we also get information about what
 # reading frame the read is aligned with.  Since each read represents
 # a ribosome-protected tag, we can derive information about ribosome
@@ -257,11 +316,12 @@ log_msg " "
 sleep 3
 echo 
 
+cat flow.cmd
 printf "%20s\t%d\t%d\n" "Raw reads" ${reads[raw]} ${alignments[raw]}
 printf "%20s\t%d\t%d\n" "too short (<20nt)" ${reads[tooshort]} ${alignments[tooshort]}
 printf "%20s\t%d\t%d\n" "adapter only" ${reads[adapter]} ${alignments[adapter]}
 printf "%20s\t%d\t%d\n" "uncalled base 'N'" ${reads[uncalled]} ${alignments[uncalled]}
-printf "%20s\t%d\t%d\n" "rRNA/spike-in" ${reads[rrna]} ${alignments[rrna]}
+printf "%20s\t%d\t%d\n" "non-rRNA/non-spike" ${reads[rrna]} ${alignments[rrna]}
 printf "%20s\t%d\t%d\n" "aligned" ${reads[unaligned]} ${alignments[unaligned]}
 printf "%20s\t%d\t%d\n" "perfect alignment" ${reads[imperfect]} ${alignments[imperfect]}
 printf "%20s\t%d\t%d\n" "nojunc alignment" ${reads[nojunc]} ${alignments[nojunc]}

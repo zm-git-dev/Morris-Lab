@@ -1,3 +1,5 @@
+#!python
+
 # plot CDS position
 # uses information from the rpos_dist.py
 # plots mod%3 of CDS position.

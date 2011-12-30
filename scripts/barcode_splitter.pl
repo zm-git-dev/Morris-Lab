@@ -29,17 +29,16 @@ my $bar;
 my $bc;
 my $element;
 
-load_barcode_file ("../barcodes");
+load_barcode_file ("../../barcodes");
 
-create_output_files;
+create_output_files();
 
 my $seqio = Bio::SeqIO->new(-file => "<$seqfile", '-format' => 'Fastq') 
             or die "could not open $seqfile: $!\n";;
 my $bario = Bio::SeqIO->new(-file => "<$barfile", '-format' => 'Fastq') 
             or die "could not open $barfile: $!\n";
-while ($seq = $seqio->next_seq and $bar = $bario->next_seq) {
+while (my $seq = $seqio->next_seq and my $bar = $bario->next_seq) {
     my $bc = $bar->seq;
-    print "barcode = ".$bc.":\n";
 
     # find the matching barcode; return the index in the list or undef if not found.
 
@@ -81,7 +80,6 @@ while ($seq = $seqio->next_seq and $bar = $bario->next_seq) {
     #(note: there's also a file associated with 'unmatched' barcode)
     my $outfile = $files{$best_barcode_ident};
 
-    print "outfile $outfile\n";
     $outfile->write_seq($seq);
 }
 
@@ -100,64 +98,69 @@ sub mismatch_count($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\
 # Read the barcode file
 #
 sub load_barcode_file ($) {
-	my $filename = shift or croak "Missing barcode file name";
+    my $filename = shift or croak "Missing barcode file name";
+    
+    open BCFILE,"<$filename" or die "Error: failed to open barcode file ($filename)\n";
+    while (<BCFILE>) {
+	next if m/^#/;
+	chomp;
+	my ($ident, $barcode) = split ;
+	
+	$barcode = uc($barcode);
+	
+	# Sanity checks on the barcodes
+	die "Error: bad data at barcode file ($filename) line $.\n" unless defined $barcode;
+	die "Error: bad barcode value ($barcode) at barcode file ($filename) line $.\n"
+	    unless $barcode =~ m/^[AGCT]+$/;
 
-	open BCFILE,"<$filename" or die "Error: failed to open barcode file ($filename)\n";
-	while (<BCFILE>) {
-		next if m/^#/;
-		chomp;
-		my ($ident, $barcode) = split ;
+	die "Error: bad identifier value ($ident) at barcode file ($filename) line $. (must be alphanumeric)\n" 
+	    unless $ident =~ m/^\w+$/;
 
-		$barcode = uc($barcode);
+	die "Error: badcode($ident, $barcode) is shorter or equal to maximum number of " .
+	    "mismatches ($allowed_mismatches). This makes no sense. Specify fewer  mismatches.\n" 
+	    if length($barcode)<=$allowed_mismatches;
 
-		# Sanity checks on the barcodes
-		die "Error: bad data at barcode file ($filename) line $.\n" unless defined $barcode;
-		die "Error: bad barcode value ($barcode) at barcode file ($filename) line $.\n"
-			unless $barcode =~ m/^[AGCT]+$/;
+	$barcodes_length = length($barcode) unless defined $barcodes_length;
+	die "Error: found barcodes in different lengths. this feature is not supported yet.\n" 
+	    unless $barcodes_length == length($barcode);
 
-		die "Error: bad identifier value ($ident) at barcode file ($filename) line $. (must be alphanumeric)\n" 
-			unless $ident =~ m/^\w+$/;
+	push @barcodes, [$ident, $barcode];
 
-		die "Error: badcode($ident, $barcode) is shorter or equal to maximum number of " .
-		    "mismatches ($allowed_mismatches). This makes no sense. Specify fewer  mismatches.\n" 
-		    	if length($barcode)<=$allowed_mismatches;
-
-		$barcodes_length = length($barcode) unless defined $barcodes_length;
-		die "Error: found barcodes in different lengths. this feature is not supported yet.\n" 
-			unless $barcodes_length == length($barcode);
-
-	 	push @barcodes, [$ident, $barcode];
-
-		if ($allow_partial_overlap>0) {
-			foreach my $i (1 .. $allow_partial_overlap) {
-				substr $barcode, ($barcodes_at_bol)?0:-1, 1, '';
-	 			push @barcodes, [$ident, $barcode];
-			}
-		}
+	if ($allow_partial_overlap>0) {
+	    foreach my $i (1 .. $allow_partial_overlap) {
+		substr $barcode, ($barcodes_at_bol)?0:-1, 1, '';
+		push @barcodes, [$ident, $barcode];
+	    }
 	}
-	close BCFILE;
-
-	if ($debug) {
-		print STDERR "barcode\tsequence\n";
-		foreach my $barcoderef (@barcodes) {
-			my ($ident, $seq) = @{$barcoderef};
-			print STDERR $ident,"\t", $seq ,"\n";
-		}
+    }
+    close BCFILE;
+    
+    if ($debug) {
+	print STDERR "barcode\tsequence\n";
+	foreach my $barcoderef (@barcodes) {
+	    my ($ident, $seq) = @{$barcoderef};
+	    print STDERR $ident,"\t", $seq ,"\n";
 	}
-}
+    }
+}		       
+
 
 
 # Create one output file for each barcode.
 # (Also create a file for the dummy 'unmatched' barcode)
 sub create_output_files {
-	my %barcodes = map { $_->[0] => 1 } @barcodes; #generate a uniq list of barcode identifiers;
-	$barcodes{'unmatched'} = 1 ;
+    #generate a uniq list of barcode identifiers;
+    my %barcodes = map { $_->[0] => 1 } @barcodes; 
+    $barcodes{'unmatched'} = 1 ;
 
-	foreach my $ident (keys %barcodes) {
-		my $new_filename = $newfile_prefix . $ident . $newfile_suffix; 
-		$filenames{$ident} = $new_filename;
-		my $file = Bio::SeqIO->new(-file => ">$outfile", '-format' => 'Fastq') 
-		           or die "could not open $outfile: $!\n";
-		$files{$ident} = $file ;
-	}
+    foreach my $ident (keys %barcodes) {
+	my $new_filename = $newfile_prefix . $ident . $newfile_suffix; 
+	$filenames{$ident} = $new_filename;
+	print "creating output file for $filenames{$ident}\n";
+	my $file = Bio::SeqIO->new(-file => ">$filenames{$ident}", '-format' => 'Fastq') 
+	    or die "could not open $outfile: $!\n";
+	$files{$ident} = $file ;
+    }
 }
+
+
