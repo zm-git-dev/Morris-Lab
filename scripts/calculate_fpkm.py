@@ -1,3 +1,4 @@
+#! /usr/bin/python
 # calculate_fpkm.py
 #
 # Calculate FPKM values for each gene to which a set of reads has been mapped.
@@ -47,7 +48,8 @@ class Gene:
         self.common_name = "common_name"
         self.len = 0
         self.nfrags = 0
-
+        self.coding = 0
+        
     def __str__(self):
         rep = '{0} len: {2} \n'\
               .format(self.name, 
@@ -91,8 +93,13 @@ def main(argv = None):
         gname = row["refseq"]
         if not (gname in genes):
             gene = Gene()
-            gene.name = row["refseq"]
+            gene.refseq_name = row["refseq"]
+            gene.common_name = row["gene"]
             gene.len = row["genelen"]
+            if row["regio"] == 'NC':
+                gene.coding = 0
+            else:
+                gene.coding = 1
             genes[gname] = gene
         else:
             gene = genes[gname]
@@ -114,10 +121,10 @@ def main(argv = None):
     #
     # Calculate FPKM for each remaining gene and print the results.
     #
-    hdr = "{0:s}\t{1:s}"
-    rec = "{0}\t{1:f}\t{2:f}"
+    hdr = "{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}"
+    rec = "{0}\t{1:f}\t{2:f}\t{3:s}\t{4:d}"
 
-    print hdr.format("tracking_id", "FPKM")
+    print hdr.format("tracking_id", "FPKM", "avgdepth", "gene", "coding")
     
     m = float(n_mapped_frags)/(float(1000000))
     for name in genes.keys():
@@ -129,7 +136,7 @@ def main(argv = None):
         avgdepth = float(gene.nfrags)/float(gene.len)
 
         #print name, gene.nfrags, fpkm, k, m
-        print rec.format(name, fpkm, avgdepth)
+        print rec.format(name, fpkm, avgdepth, gene.common_name, gene.coding)
     
 
 def usage(msg = None):
