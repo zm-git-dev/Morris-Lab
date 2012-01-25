@@ -6,7 +6,7 @@
 
 usage()
 {
-cat << EOF
+cat >/dev/stderr << EOF
 
 Align reads to reference genome and calculate position of read 5' ends
 w.r.t. beginning of CDS region.  The input data is extensively
@@ -26,13 +26,165 @@ e.g.,
     s_cerevisiae reference genome.
 
 OPTIONS:
-   -h      Show this message
-   -s      calculate statistics only
-   -g      reference genome (mm9, hg18, or hg19)
-   -m      number of mismatches to allow (default is zero)
-   -b      use bowtie instead of tophat (not tested)
-   -a      adapter (default is ATCTCGTATGCCGTCTTCTGCTTG)
+   -h      		Show this message
+   -s      		calculate statistics only
+   -g <genome>  	reference genome (mm9, hg18, or hg19)
+   -m <mismatches>     	number of mismatches to allow (default is zero)
+   -b      		use bowtie instead of tophat (not tested)
+   -a <adapter>		adapter (default is ATCTCGTATGCCGTCTTCTGCTTG)
 EOF
+}
+
+
+# Output message to log file.
+function log_msg()
+{
+    echo "$*" >>$logfile
+}
+
+# Count reads in a FASTQ file
+function readc() { echo $(( $(cat $* | wc -l) / 4 )); }
+
+
+#
+# filter reads.  This is done before alignment to eliminate low
+# quality reads, or reads that are too short.  The illumina adapter,
+# spike-in RNA, and ribosomal RNA are also eliminated during this
+# step.
+#
+function filter_reads() {
+    input="$1"
+    output="$2"
+
+    if [[ "$STATSONLY" -ne 1 ]]
+    then
+	log_msg "Trimming adapter, clipping to ${LENGTH}nt, and filtering bad reads..."
+
+	# if the input filename has a ".gz", unzip it.
+	#
+	cmd="cat"
+	if [ "${input##*.}" = "gz" ]; then
+	    cmd="gunzip -c"
+	fi
+	echo 	${cmd} ${input}
+
+	${cmd} ${input} | fastx_clipper -a "${ADAPTER}" -l ${LENGTH} -Q33 -v > ${basename}.multilen.fastq 2>clipstats.txt
+
+	echo "fastx_clipper returned $?" >&2
+
+	log_msg "aligning to rRNA bowtie..."
+	bowtie --un ${output} "${RRNA_BASE}" ${basename}.multilen.fastq >/dev/null  
+	echo "bowtie returned $?" >&2
+    fi # endif not STATSONLY
+
+    # collect statistics
+    reads[rrna]=$(readc ${output})
+
+    stats=($(awk '$2 ~ /^[0-9]+$/ {print $2 }' <clipstats.txt))
+    reads[raw]=${stats[0]}
+    reads[tooshort]=$(( ${reads[raw]} - ${stats[2]} ))
+    reads[adapter]=$(( ${reads[tooshort]} - ${stats[3]} ))
+    reads[uncalled]=$(( ${reads[adapter]} - ${stats[4]} ))
+} # end filter_reads()
+
+
+
+
+#
+# align reads to a genome.  There are several genomes for various
+# organisms available.  These may be selected with command-line
+# options.
+#
+function align_reads()
+{
+    input="$1"
+    # output is always "./tophat-out/accepted_hits.bam"
+
+    if [[ "$STATSONLY" -ne 1 ]]
+    then
+	goodreads=${reads[rrna]}
+	if [ -z "${USE_BOWTIE}" ]
+	then
+	    log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with tophat..."
+	    tophat --segment-length 10 --segment-mismatches 0 -G ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf  "/${INDEX_BASE}"  ${input}
+	    echo "tophat returned $?" >&2
+	else
+	    echo "using bowtie for main alignment" >&2
+	    log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with bowtie..."
+	    bowtie --best --sam "/${INDEX_BASE}"  ${input} | awk '$3!="*"' >accepted_hits.sam
+	    echo "bowtie returned $?" >&2
+	    mkdir tophat_out
+	    samtools view -Sb -o tophat_out/accepted_hits.bam accepted_hits.sam
+	fi
+    fi # endif not STATSONLY
+
+    # Count how many successful alignments
+    log_msg "Counting successful alignments..."
+    reads[unaligned]=$(( $(samtools view tophat_out/accepted_hits.bam | awk '{print $1}' |sort|uniq|wc -l) ))
+    alignments[unaligned]=$(samtools view tophat_out/accepted_hits.bam | wc -l )
+
+} # end align_reads()
+
+
+
+
+########################################################################
+# filter alignments.  here we take out alignments that are not aligned
+# to exons of known genes, etc.
+#
+function filter_alignments()
+{
+    input="$1"
+    output="$2"
+
+    if [[ "$STATSONLY" -ne 1 ]]
+    then
+	log_msg "filtering out imperfect alignments..."
+	samtools view -h "${input}"        \
+            | awk '/^@/ {print}
+                !/^@/ { for (i = 1; i <= NF; i++) 
+	                  if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
+ 	                      print ;
+                              break;
+                          }
+                      }' \
+			  | samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
+	
+	log_msg "filtering out alignments with junctions..."
+	samtools view -h tophat_out/accepted_hits_perfect.bam | awk '/^@/ || $6 ~ /^[0-9]+M$/'| samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
+	
+	log_msg "detecting exon converage..."
+        # intersect those alignmets with exons of known genes
+	intersectBed -abam tophat_out/accepted_hits_nojunc.bam -b ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed > tophat_out/overlaps_exons.bed
+	echo "intersectBed returned $?" >&2
+
+        # Eliminate reads that map to more than a single gene
+	awk '{ print $_"\t"$4; }' <tophat_out/overlaps_exons.bed | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >${output}
+    fi
+
+    # Count how many imperfect alignments
+    log_msg "Counting imperfect alignments..."
+    reads[imperfect]=$(($(samtools view tophat_out/accepted_hits_perfect.bam | awk '{print $1}' | sort|uniq|wc -l) ))
+
+    alignments[imperfect]=$(samtools view tophat_out/accepted_hits_perfect.bam | wc -l)
+
+    # Count how many alignments without junctions
+    log_msg "Counting alignments within a single exon..."
+    reads[nojunc]=$(($(samtools view tophat_out/accepted_hits_nojunc.bam | awk '{print $1}' | sort|uniq|wc -l) ))
+
+    alignments[nojunc]=$(samtools view tophat_out/accepted_hits_nojunc.bam | wc -l)
+
+    # how many aligned reads fell within known exons
+    log_msg "Counting reads that are contained within KNOWN exons..."
+    reads[exons]=$(awk '{print $4}' <tophat_out/overlaps_exons.bed | sort|uniq|wc -l)
+    alignments[exons]=$(wc -l <tophat_out/overlaps_exons.bed)
+
+    # exclude reads that overlap multiple features (genes) at a locus
+    log_msg "Counting overlaps with single features..."
+    reads[mult_gene]=$(awk '{ print $4; }' < ${output} | sort | uniq -c | wc -l )
+
+    alignments[mult_gene]=$(wc -l < ${output})
+
 }
 
 command_line="$0 $@"
@@ -46,36 +198,32 @@ ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
 while getopts "hsvbm:g:a:l:" OPTION
 do
      case "${OPTION}" in
-         h)
-             usage
+         h)  usage
              exit 1
              ;;
-         s)
-             STATSONLY=1
+         s)  STATSONLY=1
 	     echo "stats only"
              ;;
-         g)
- 	     REF_GENOME="${OPTARG}"
+         g)  REF_GENOME="${OPTARG}"
 	     ;;
-         m)
- 	     MISMATCHES=$(( ${OPTARG} ))
+         m)  MISMATCHES=$(( ${OPTARG} ))
 	     ;;
-         b)
- 	     USE_BOWTIE=1
+         b)  USE_BOWTIE=1
 	     ;;
-         a)
-	     ADAPTER="${OPTARG}"
+         a)  ADAPTER="${OPTARG}"
 	     ;;
-         l)
-	     LENGTH="${OPTARG}"
+         l)  LENGTH="${OPTARG}"
 	     ;;
-         ?)
-             usage
+         ?)  usage
              exit
              ;;
      esac
 done
 
+# This script can align reads against a handful of genomes.  Here we
+# decide whether to use the mouse genome, the human genome (hg18 or
+# hg19), or the yeast genome.
+#
 case "${REF_GENOME}" in 
     "mm9")
  	INDEX_BASE="mm9/mm9"
@@ -107,10 +255,18 @@ esac
 # getopts will not change the positional parameter set — if you want
 # to shift it, you have to do it manually after processing:
 shift $((OPTIND-1))
-
-
 rawreads="$1"
 echo "Raw reads is ${rawreads}"
+
+if [ ! -r "${rawreads}" ]
+then
+    echo >/dev/stderr
+    echo "Error: Cannot open raw read file \"${rawreads}\"" >/dev/stderr
+    echo >/dev/stderr
+    usage;
+    exit
+fi
+
 
 #
 # Use the name of the file that contains the raw reads to generate the
@@ -130,51 +286,6 @@ trap "rm -f $logfile" EXIT
 # command and the script will continue to run.
 trap 'exit 0' INT
 
-# Output message to log file.
-function log_msg()
-{
-    echo "$*" >>$logfile
-}
-
-function filter_alignments()
-{
-    # "filtering out imperfect alignments..."
-    samtools view -h /dev/stdin   \
-	| awk '# filter out alignments with more than ${MISMATCHES} mismatched bases.
-               /^@/ {print}
-               !/^@/ { for (i = 1; i <= NF; i++) 
-	                 if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) \
-                             && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
- 	                      print;
-                              count++;
-                              break;
-                          }
-                      }
-		END {
-		    print "reads with fewer than '"${MISMATCHES}"' mismatches:\t", count > "/dev/stderr" # gawk only
-		    }' \
-    	| awk '# filter out alignments with junctions...
-               /^@/ { print }
-               $6 ~ /^[0-9]+M$/ {
-                      print;
-                      count++;
-                      }
-               END {
-                   print "reads without junctions:\t",count > "/dev/stderr"   # gawk only
-                   }' \
-	| samtools view -Sb -o /dev/stdout /dev/stdin \
-	| intersectBed -abam /dev/stdin -b ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed \
-        | awk '# Eliminate reads that map to more than a single gene
-               { print $_"\t"$4; }' | sort -k 13 | uniq -f 12 -u | cut -f 1-12 
-
-    # echo "intersectBed returned $?" >&2
-
-
-    mismatches=$*
-}
-
-# Count reads in a FASTQ file
-function readc() { echo $(( $(cat $* | wc -l) / 4 )); }
 
 exec 2>errors.txt
 
@@ -204,96 +315,14 @@ done
 if [[ "$STATSONLY" -ne 1 ]]
 then
     echo "${command_line}" >flow.cmd
+fi
 
-    log_msg "Trimming adapter, clipping to ${LENGTH}nt, and filtering bad reads..."
+filter_reads ${rawreads} non-rrna.fq
 
-    fastx_clipper -a "${ADAPTER}" -l ${LENGTH} -Q33 -v < ${rawreads} > ${basename}.multilen.fastq 2>clipstats.txt
-    echo "fastx_clipper returned $?" >&2
+align_reads  non-rrna.fq   # produces tophat/accepted_hits.bam
 
-    log_msg "aligning to rRNA bowtie..."
-    bowtie --al rrna.fq --un non-rrna.fq "${RRNA_BASE}" ${basename}.multilen.fastq -S  >${basename}.rrna.sam  
-    echo "bowtie returned $?" >&2
+filter_alignments tophat_out/accepted_hits.bam tophat_out/overlaps_exons_uniq.bed
 
-    goodreads=$(readc non-rrna.fq)
-    if [ -z "${USE_BOWTIE}" ]
-    then
-	log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with tophat..."
-	tophat --segment-length 10 --segment-mismatches 0 -G ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes.gtf  "/${INDEX_BASE}"  non-rrna.fq
-	echo "tophat returned $?" >&2
-    else
-	echo "using bowtie for main aliagnment" >&2
-	log_msg "aligning ${goodreads} reads to ${REF_GENOME} genome with bowtie..."
-	bowtie --best --sam "/${INDEX_BASE}"  non-rrna.fq | awk '$3!="*"' >accepted_hits.sam
-	echo "bowtie returned $?" >&2
-	mkdir tophat_out
-	samtools view -Sb -o tophat_out/accepted_hits.bam accepted_hits.sam
-    fi
-
-    log_msg "filtering out imperfect alignments..."
-    samtools view -h tophat_out/accepted_hits.bam        \
-         | awk '/^@/ {print}
-                !/^@/ { for (i = 1; i <= NF; i++) 
-	                  if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
- 	                      print ;
-                              break;
-                          }
-                      }' \
-	 | samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
-    
-    log_msg "filtering out alignments with junctions..."
-    samtools view -h tophat_out/accepted_hits_perfect.bam | awk '/^@/ || $6 ~ /^[0-9]+M$/'| samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
-    
-    log_msg "detecting exon converage..."
-    # intersect those alignmets with exons of known genes
-    intersectBed -abam tophat_out/accepted_hits_nojunc.bam -b ${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes_exons.bed -s -f 1.0 -wa -wb -bed > tophat_out/overlaps_exons.bed
-    echo "intersectBed returned $?" >&2
-
-    # Eliminate reads that map to more than a single gene
-    awk '{ print $_"\t"$4; }' <tophat_out/overlaps_exons.bed | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >tophat_out/overlaps_exons_uniq.bed
-
-fi  # END !STATSONLY
-
-
-# collect statistics
-stats=($(awk '$2 ~ /^[0-9]+$/ {print $2 }' <clipstats.txt))
-reads[raw]=${stats[0]}
-reads[tooshort]=$(( ${reads[raw]} - ${stats[2]} ))
-reads[adapter]=$(( ${reads[tooshort]} - ${stats[3]} ))
-reads[uncalled]=$(( ${reads[adapter]} - ${stats[4]} ))
-
-
-log_msg "Counting rRNA alignments..."
-reads[rrna]=$(readc non-rrna.fq)
-
-# Count how many failed to align
-log_msg "Counting failed alignments..."
-reads[unaligned]=$(( $(samtools view tophat_out/accepted_hits.bam | awk '{print $1}' |sort|uniq|wc -l) ))
-alignments[unaligned]=$(samtools view tophat_out/accepted_hits.bam | wc -l )
-
-
-# Count how many imperfect alignments
-log_msg "Counting imperfect alignments..."
-reads[imperfect]=$(($(samtools view tophat_out/accepted_hits_perfect.bam | awk '{print $1}' | sort|uniq|wc -l) ))
-
-alignments[imperfect]=$(samtools view tophat_out/accepted_hits_perfect.bam | wc -l)
-
-# Count how many alignments without junctions
-log_msg "Counting alignments within a single exon..."
-reads[nojunc]=$(($(samtools view tophat_out/accepted_hits_nojunc.bam | awk '{print $1}' | sort|uniq|wc -l) ))
-
-alignments[nojunc]=$(samtools view tophat_out/accepted_hits_nojunc.bam | wc -l)
-
-# how many aligned reads fell within known exons
-log_msg "Counting reads that are contained within KNOWN exons..."
-reads[exons]=$(awk '{print $4}' <tophat_out/overlaps_exons.bed | sort|uniq|wc -l)
-alignments[exons]=$(wc -l <tophat_out/overlaps_exons.bed)
-
-# exclude reads that overlap multiple features (genes) at a locus
-log_msg "Counting overlaps with single features..."
-reads[mult_gene]=$(awk '{ print $4; }' <tophat_out/overlaps_exons_uniq.bed | sort | uniq -c | wc -l )
-
-alignments[mult_gene]=$(wc -l <tophat_out/overlaps_exons_uniq.bed)
-    
 #
 # THIS IS IT!  This next call to rpos_dist.py is the heart of this
 # routine and the main reason we have prepared the reads up to this point.
@@ -330,3 +359,7 @@ printf "%20s\t%d\t%d\n" "single genes" ${reads[mult_gene]} ${alignments[mult_gen
 
 echo
 cat rpos_dist_stats.txt
+
+
+
+
