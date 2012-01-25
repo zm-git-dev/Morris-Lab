@@ -46,6 +46,7 @@ import csv
 import sys
 import getopt
 import math
+import copy
 import string
 
 import matplotlib.pyplot as plt
@@ -93,6 +94,12 @@ class AnnoteFinder:
           return annote
           # return '(%3.2f, %3.2f) (%3.2f, %3.2f) %s'%(x, y, clickX, clickY, annote)
 
+
+
+#####################################################################
+# Class Gene - Class used to hold data for one gene.  One of these is
+# generated for each line of the input files.
+#
 class Gene:
     def __init__(self):
         self.name = "name"
@@ -111,10 +118,10 @@ class Gene:
     # End Gene
 
 
-
+#####################################################################
 # main() takes an optional 'argv' argument, which allows us to call it
 # from the interactive Python promp.
-
+#
 def main(argv = None):
     if argv is None:
         argv = sys.argv
@@ -123,10 +130,11 @@ def main(argv = None):
     ylabel = None
     title = None
     nsamples = None
+    include_missing = False
     marker=','
     
     try:
-        opts, args = getopt.getopt(argv, "hx:y:t:n:m:d", ["help", "output="])
+        opts, args = getopt.getopt(argv, "hx:y:t:n:m:dz", ["help", "output="])
     except getopt.GetoptError, msg:          
         usage(msg)                         
         return 2
@@ -145,6 +153,8 @@ def main(argv = None):
             title = arg                  
         elif opt == '-n':                
             nsamples = int(arg)
+        elif opt == '-z':                
+            include_missing = True
         elif opt == '-m':
             if arg.isdigit():
                 marker = int(arg)
@@ -172,6 +182,7 @@ def main(argv = None):
             gene.formal_name = row["tracking_id"]
             gene.common_name = row["gene"]
             gene.fpkm = float(row["FPKM"])
+            gene.coding = int(row["coding"])
             genes1[gene.formal_name] = gene
 
     finally:
@@ -192,21 +203,32 @@ def main(argv = None):
             gene.formal_name = row["tracking_id"]
             gene.common_name = row["gene"]
             gene.fpkm = float(row["FPKM"])
+            gene.coding = int(row["coding"])
             genes2[gene.formal_name] = gene
 
     finally:
         if in_handle is not None:
             in_handle.close()
 
-    # decide which genes we are going to display in the scatter plot.
-    # Use the first set of data as a base.  Sort the genes in the
-    # first set according to FPKM value.  That way we can Then look through the second
-    # set of genes and use any genes that are common to both sets.
-    keys = list()
-    prospective_keys = sorted(genes1, key=lambda key: genes1[key].fpkm, reverse=True)
-    for k in prospective_keys:
-        if k in genes2:
-            keys.append(k)
+    # If the user wants, we can include the values that are missing in one dataset or another.
+    #
+    if include_missing:
+        geneset1 = set(genes1.keys())
+        geneset2 = set(genes2.keys())
+        for k in geneset1 - geneset2:
+            gene = copy.copy(genes1[k])
+            gene.fpkm = 0
+            genes2[k] = gene
+
+        for k in geneset2 - geneset1:
+            gene = copy.copy(genes2[k])
+            gene.fpkm = 0
+            genes1[k] = gene
+    else:
+        for k in set(genes1.keys()).difference(genes2.keys()):
+            del genes1[k]
+
+    keys = sorted(genes1, key=lambda key: genes1[key].fpkm+genes2[key].fpkm, reverse=True)
 
     if nsamples is not None:
         nsamples = min(nsamples, len(keys))
@@ -218,10 +240,16 @@ def main(argv = None):
     x = list()
     y = list()
     annotes = list()
+    colors = list()
     for k in keys[:nsamples]:
-        x.append(genes1[k].fpkm)
+        gene = genes1[k]
+        x.append(gene.fpkm)
         y.append(genes2[k].fpkm)
-        annotes.append(k)
+        annotes.append(gene.common_name+'  '+gene.formal_name)
+        if (gene.coding):
+          colors.append('blue')
+        else:
+          colors.append('tomato')
         
     global fig
     fig = plt.figure(1)
@@ -231,15 +259,15 @@ def main(argv = None):
     # You might think that the way to get a log-log scatter plot
     # would be to use scatter() and set the axis scales to "log"
     # That doesn't work.  It ends up graphing only a portion of the data.
-    # 	ax.set_yscale('log')
-    #   ax.set_xscale('log')
-    #   ax.set_xlim(1e-1, 10e5)
-    #   ax.set_ylim(1e-1, 10e5)
-    #   plt.scatter(x, y)
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ax.scatter(x, y, c=colors)
+    ax.autoscale_view(False, True, True)
+
     #
     # Calling plt.loglog() works though.
     
-    plt.loglog(x,y,marker=marker,linestyle='none', color='tomato')
+    #plt.loglog(x,y,marker=marker,linestyle='none', color='tomato')
 
     # calculate regression statistics that we can display on the plot.
     #
@@ -272,11 +300,6 @@ def main(argv = None):
     plt.show()
 
     return 0
-
-def onclick(event):
-    print 'button=%d, x=%d, y=%d, xdata=%f, ydata=%f'%(
-        event.button, event.x, event.y, event.xdata, event.ydata)
-
 
 def usage(msg = None):
     if msg is not None:
