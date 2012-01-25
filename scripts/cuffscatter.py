@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # cuffscatter.py
 # 
 #
@@ -35,9 +36,9 @@
 # -n <num>	Graph only the top <num> most abundant genes.	
 #
 # -m <marker>	Mark each point with <marker>; default is a single pixel mark.
-# 		Use 'o' for a larger round mark that is easier to see.
-#		<marker> should be one of the matplotlib line markers documented at
+# 		<marker> can be any of the matplotlib line markers documented at
 # 		http://matplotlib.sourceforge.net/api/artist_api.html#matplotlib.lines.Line2D.set_marker
+#		Use -m 'o' for a larger round mark that is easier to see.
 #
 
 
@@ -55,6 +56,42 @@ import numpy as np
 from scipy import stats
 import pylab
 from array import array
+
+class AnnoteFinder:
+  """
+  callback for matplotlib to display an annotation when points are clicked on.  The
+  point which is closest to the click and within xtol and ytol is identified.
+    
+  Register this function like this:
+    
+  scatter(xdata, ydata)
+  af = AnnoteFinder(xdata, ydata, annotes)
+  connect('button_press_event', af)
+  """
+
+  def __init__(self, xdata, ydata, annotes, axis=None):
+    self.data = zip(xdata, ydata, annotes)
+    if axis is None:
+      self.axis = pylab.gca()
+    else:
+      self.axis= axis
+
+  def distance(self, x1, x2, y1, y2):
+    """
+    return the distance between two points
+    """
+    return math.hypot(x1 - x2, y1 - y2)
+
+  def findAnnote(self, clickX, clickY):
+      annote=None
+      annotes = []
+      for x,y,a in self.data:
+             annotes.append((self.distance(x,clickX,y,clickY),x,y, a) )
+      if annotes:
+          annotes.sort()
+          distance, x, y, annote = annotes[0]
+          return annote
+          # return '(%3.2f, %3.2f) (%3.2f, %3.2f) %s'%(x, y, clickX, clickY, annote)
 
 
 
@@ -114,7 +151,8 @@ def main(argv = None):
         
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for g_row in g_reader:
-            genes1[g_row["tracking_id"]] = g_row["FPKM"]
+            name = g_row["tracking_id"]+" "+g_row["gene"]
+            genes1[name] = g_row["FPKM"]
 
     finally:
         if in_handle is not None:
@@ -130,7 +168,8 @@ def main(argv = None):
         
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for g_row in g_reader:
-            genes2[g_row["tracking_id"]] = g_row["FPKM"]
+            name = g_row["tracking_id"]+" "+g_row["gene"]
+            genes2[name] = g_row["FPKM"]
 
     finally:
         if in_handle is not None:
@@ -151,9 +190,11 @@ def main(argv = None):
     
     x = list()
     y = list()
+    annotes = list()
     for k in keys[:nsamples]:
         x.append(float(genes1[k]))
         y.append(float(genes2[k]))
+        annotes.append(k)
         
     global fig
     fig = plt.figure(1)
@@ -171,7 +212,7 @@ def main(argv = None):
     #
     # Calling plt.loglog() works though.
     
-    plt.loglog(x,y,marker=marker,linestyle='none')
+    plt.loglog(x,y,marker=marker,linestyle='none', color='tomato')
 
     # calculate regression statistics that we can display on the plot.
     #
@@ -190,18 +231,25 @@ def main(argv = None):
     ax.text(0.05, 0.9, 'R$\r{^{2}}$=%0.4f\nN=%d'%(r_value**2, len(x)),
             transform=ax.transAxes, va='top')
     
-    # Provide a default label if the user did not supply one.
+    # Provide a default title if the user did not supply one.
     if title is None and xlabel is not None and ylabel is not None:
         title = "Comparison of %s and %s" % (xlabel, ylabel)
-        
     if title is not None:
         ax.set_title(title)
+
+    af =  AnnoteFinder(x,y, annotes)
+    ax.format_coord = lambda x,y : af.findAnnote(x, y)
 
     #fig.savefig("fig.%s.png" % (ylabel), format="png")
     
     plt.show()
 
     return 0
+
+def onclick(event):
+    print 'button=%d, x=%d, y=%d, xdata=%f, ydata=%f'%(
+        event.button, event.x, event.y, event.xdata, event.ydata)
+
 
 def usage(msg = None):
     if msg is not None:
