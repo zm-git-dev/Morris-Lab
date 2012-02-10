@@ -7,7 +7,7 @@
 usage()
 {
 cat >/dev/stderr << EOF
-
+adap
 Align reads to reference genome and calculate position of read 5' ends
 w.r.t. beginning of CDS region.  The input data is extensively
 filtered to eliminate low quality reads and reads that map to
@@ -141,17 +141,13 @@ function filter_alignments()
     then
 	log_msg "filtering out imperfect alignments..."
 	samtools view -h "${input}"        \
-            | awk '/^@/ {print}
-                !/^@/ { for (i = 1; i <= NF; i++) 
-	                  if ($i ~ /\<NM:i:[0-9]+\>/ && match($i, /[0-9]+/) && substr($i, RSTART, RLENGTH) >= '"${MISMATCHES}"') {
- 	                      print ;
-                              break;
-                          }
-                      }' \
-			  | samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
+	    | awk '/^@/ { print;} /NM:i:[0-9]+/ { if (int(substr($$0,match($$0, /NM:i:/)+5)) <= ${MISMATCHES}) print; }' \
+	    | samtools view -Sb -o tophat_out/accepted_hits_perfect.bam /dev/stdin 
 	
 	log_msg "filtering out alignments with junctions..."
-	samtools view -h tophat_out/accepted_hits_perfect.bam | awk '/^@/ || $6 ~ /^[0-9]+M$/'| samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
+	samtools view -h tophat_out/accepted_hits_perfect.bam | 
+	    | awk '/^@/ || $6 !~ /.*[0-9]*M[0-9]+N[0-9]+M$/' \
+	    | samtools view -Sb -o tophat_out/accepted_hits_nojunc.bam /dev/stdin 
 	
 	log_msg "detecting exon converage..."
         # intersect those alignmets with exons of known genes

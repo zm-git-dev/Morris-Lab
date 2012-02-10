@@ -11,12 +11,17 @@ MORRIS=/home/csw/Morris-Lab
 REFDIR=/usr/local/share/genome
 SCRIPTS=${MORRIS}/scripts
 knowngenes=${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes
-ADAPTER="ATCTCGTATGCCGTCTTCTGCTTG"
+ADAPTER=TGGAATTCTCGGGTGCCAAGG
 LENGTH=20
 
 all: ${aligner}_out/aligned_position_stats.txt
 
-clean: clean-bowtie clean-tophat
+clean: clean-common clean-bowtie clean-tophat
+
+clean-common:
+	-rm -f ${basename}.multilen.fq
+	-rm -f ${basename}.nonrrna.fq
+	-rm -f cutadap.out clipstats.txt
 
 clean-tophat: 
 	-rm -f tophat_out/aligned_position_stats.txt  tophat_out/overlaps_exons_uniq.bed tophat_out/accepted_hits_nojunc.bam tophat_out/accepted_hits_perfect.bam
@@ -24,34 +29,39 @@ clean-tophat:
 clean-bowtie: 
 	-rm -f bowtie_out/aligned_position_stats.txt  bowtie_out/overlaps_exons_uniq.bed bowtie_out/accepted_hits_nojunc.bam bowtie_out/accepted_hits_perfect.bam
 
-clobber: clobber-bowtie clobber-tophat
+clobber: clobber-common clobber-bowtie clobber-tophat
 
 clobber-tophat:
-	-rm -f tophat_out/aligned_position_stats.txt  tophat_out/overlaps_exons_uniq.bed tophat_out/accepted_hits_nojunc.bam tophat_out/accepted_hits_perfect.bam
+	-rm -rf tophat_out
 
 clobber-bowtie: clobber-common
-	-rm -f bowtie_out/bowtie_hits.sam bowtie_out/aligned_position_stats.txt  bowtie_out/overlaps_exons_uniq.bed bowtie_out/accepted_hits_nojunc.bam bowtie_out/accepted_hits_perfect.bam
+	-rm -rf bowtie_out
 
-clobber-common : 
-	-rm -f short.multilen.fastq
+clobber-common : clean-common
 
 plot: ${aligner}_out/aligned_position_stats.txt
-	${SCRIPTS}/plot_rpos_vs_region.sh <$^
+	bash ${SCRIPTS}/plot_rpos_vs_region.sh <$^
 
-${basename}.multilen.fastq : ${rawreads}
-	fastx_clipper -a "${ADAPTER}" -l ${LENGTH} -Q33 -v <$^ > $@ 
+cmd.gz=gunzip -c
+cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
+
+${basename}.multilen.fq : ${rawreads}
+	${cmd} $^ | fastx_clipper -a ${ADAPTER} -l ${LENGTH} -Q33 -v >$@ 
+	#${cmd} $^ | cutadapt -o $@ -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin
 
 #
 # Align the reads.
 # We can use either bowtie or tophat, depending on the target.
 #
-bowtie_out/bowtie_hits.sam : bowtie_out/non-rrna.fq 
+bowtie_out/bowtie_hits.sam : ${basename}.nonrrna.fq
+	@-mkdir -p $(dir $@)
 	bowtie --best --sam "/${INDEX_BASE}"  $^ >$@
 
 bowtie_out/accepted_hits.bam: bowtie_out/bowtie_hits.sam
 	awk '/^@/ || $$3!="*"' <$^ | samtools view -Sbh /dev/stdin >$@
 
-tophat_out/accepted_hits.bam: reads.multilen.fastq
+tophat_out/accepted_hits.bam: ${basename}.nonrrna.fq 
+	@-mkdir -p $(dir $@)
 	tophat --segment-length 10 --segment-mismatches 0 -G  ${knowngenes}.gtf  "/${INDEX_BASE}" $^
 
 #
@@ -59,14 +69,13 @@ tophat_out/accepted_hits.bam: reads.multilen.fastq
 # FIXME: this fails if there are 10 or more mismatches
 #
 ${aligner}_out/accepted_hits_perfect.sam: ${aligner}_out/accepted_hits.bam
-	samtools view -h $^ | grep -w 'NM:i:[0-${MISMATCHES}]' >$@
+	samtools view -h $^ | awk '/^@/ { print;} /NM:i:[0-9]+/ { if (int(substr($$0,match($$0, /NM:i:/)+5)) <= ${MISMATCHES}) print; }' >$@
 
 #
 # filter out reads that align to ribosomal DNA
 #
-${aligner}_out/non-rrna.fq : ${basename}.multilen.fastq
-	@-mkdir $(@D)
-	bowtie --un $@ "${RRNA_BASE}" ${basename}.multilen.fastq >/dev/null  
+${basename}.nonrrna.fq : ${basename}.multilen.fq
+	bowtie --un $@ "${RRNA_BASE}" $^ >/dev/null  
 
 
 #
@@ -74,8 +83,16 @@ ${aligner}_out/non-rrna.fq : ${basename}.multilen.fastq
 # This really only applies to alignments from tophat for now, although
 # in the future, bowtie II will also find gapped alignments.
 #
+# The 6th field in a SAM record is a CIGAR string that indicates how
+# the read was aligned to the reference genome.  CIGAR strings of ##M
+# (e.g. 21M or 36M, etc) indicates how many bases continuously matched
+# or mismatched the genome.  A CIGAR string like 10M2003N15M indicates
+# that there was a long string of unmatched bases in the middle
+# ("2003N"), and that usually means there is a junction or intron in
+# the gap.  We want to filter those out of our alignment files.
+#
 ${aligner}_out/accepted_hits_nojunc.bam:  ${aligner}_out/accepted_hits_perfect.sam
-	awk '/^@/ || $$6 ~ /^[0-9]+M$$/' $^ | samtools view -Sbh /dev/stdin >$@
+	awk '/^@/ || $$6 !~ /.*[0-9]*M[0-9]+N[0-9]+M$$/' $^ | samtools view -Sbh /dev/stdin >$@
 
 ${aligner}_out/overlaps_exons.bed: ${aligner}_out/accepted_hits_nojunc.bam
 	intersectBed -abam $^ -b ${knowngenes}_exons.bed -s -f 1.0 -wa -wb -bed > $@
@@ -84,12 +101,14 @@ ${aligner}_out/overlaps_exons_uniq.bed: ${aligner}_out/overlaps_exons.bed
 	awk '{ print $$_"\t"$$4; }' <$^ | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >$@
 
 ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.bed
-	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^  >$@ 2>rpos_dist_stats.txt
+	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^  >$@ 2>${aligner}_out/rpos_dist_stats.txt
 
 #
-# Calculate various statistics about the workflow.
+# pseudo target to calculate various statistics about the workflow.
 #
-stats: ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_nojunc.bam ${aligner}_out/overlaps_exons.bed ${aligner}_out/overlaps_exons_uniq.bed
+stats: read_stats alignment_stats
+
+alignment__stats : ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_nojunc.bam ${aligner}_out/overlaps_exons.bed ${aligner}_out/overlaps_exons_uniq.bed
 	@echo -n "perfect alignments:\t"
 	#@echo -n $$(awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq|wc -l)"\t"	
 	@awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq -c| awk '{ total += $$1 } END { print "perfect alignments:",NR,total; }'
@@ -108,3 +127,4 @@ stats: ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_noj
 
 .PHONY: clean clean-tophat clean-bowtie clobber clobber-tophat clobber-bowtie stats
 
+.DELETE_ON_ERROR :
