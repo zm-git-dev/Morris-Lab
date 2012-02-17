@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# Depending on the options provided, bowtie (and tophat?) may produce
+# multiple alignments for each read. Each distinct alignment has the
+# same read name.  This routine modifies the read name so each
+# alignment has a unique name.
+#
+# 120119_GRC2_00060_FC_63A5LAAXX:8:92:14942:19624:1#0/1	chr10	69488014
+# 120119_GRC2_00060_FC_63A5LAAXX:8:92:14942:19624:1#0/1	chr3	57523419
+# 
+# will be transformed into...
+#
+# 120119_GRC2_00060_FC_63A5LAAXX:8:92:14942:19624:1#0/1	chr10	69488014
+# 120119_GRC2_00060_FC_63A5LAAXX:8:92:14942:19624:1#0/2	chr3	57523419
+# 
+# note that the 
+
+
+
+
+awk '
+    /^@/ { print; }                             # leave the SAM header alone.
+    !/^@/ && $3!="*" { print | " sort -k 1 " }  # sort the alignments by read name
+' | awk ' 
+
+    # for every identical adjacent read name, append a monotonically
+    # increasing digit to the name so each name within a sort group is
+    # unique
+
+    BEGIN { OFS="\t"; i = 2; }
+
+    { 
+	if ($1 == prev) {
+	    sub("/1", "/"i, $1);
+	    i++;
+	} else {
+	    prev = $1;
+	    i = 2;
+	}
+    }
+    { print; }
+'
