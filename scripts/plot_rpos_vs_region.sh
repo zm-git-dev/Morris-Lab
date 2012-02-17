@@ -68,7 +68,7 @@ trap on_exit EXIT
 #
 # So from this one line, at least five temp files are made: four files
 # categorized by region with read position as a percentage of that
-# region, and a fifthe file that contains data from all regionswith
+# region, and a fifth file that contains data from all regions with
 # read position as a percentage of gene length.
 #
 
@@ -84,7 +84,7 @@ awk '!/^#/ {print $6,$2 >"'$TMPFILE'."$5; print $7,$2 >"'$TMPFILE'.gene" } ' -
 # Perhaps one of the things you might learn from this is, say, few
 # genes have reads mapped to 90% from the start of the gene.  Or maybe
 # you would see that most of the reads are clustered at about 20% from
-# the start of all genes.  Or this might show that there us even
+# the start of all genes.  Or this might show that there is even
 # coverage of the gene as a whole but coverage of the 5'-UTR is
 # clustered at the beginning.
 #
