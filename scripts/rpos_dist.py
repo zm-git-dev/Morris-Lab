@@ -1,3 +1,4 @@
+#! /usr/bin/python
 # make a plot of ribosome position vs. frequency.
 # This is one of the graphs we discussed at the hutch.
 #
@@ -548,7 +549,7 @@ def find_gene(knowngenes, row, opt, stats):
 
 # Now read a file that is the output of intersectBed.
 # It looks like this:
-# chr1	3661187	3661209	ILLUMINA-D43DB5:7:10:17415:2809:0#0	255	-	chr1	3660632	3661579	NM_001011874_exon_2_0_chr1_3660633_r	0	-
+# chr1	3661187	3661209	ILLUMINA-D43DB50/1 255 - chr1 3660632 3661579 NM_001011874_exon_2_0_chr1_3660633_r 0 -
 #
 # The first few fields are the read and the last few are the exon that
 # this read maps to. 'junk' indicates junk field that we don't use.
@@ -566,8 +567,8 @@ def find_gene(knowngenes, row, opt, stats):
 def process_reads(reads_file, knowngenes, opt, stats):
     match_limit = opt.match_limit
 
-    hdr = "#{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}\t{5:s}\t{6:s}"
-    rec = "{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6:.2f}"
+    hdr = "#{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}\t{5:s}\t{6:s}\t{7:s}"
+    rec = "{0}\t{1}\t{2}\t{3}\t{4}\t{5:.2f}\t{6:.2f}\t{7:d}"
 
     try:
         warnings = dict()
@@ -576,7 +577,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
         in_handle = open(reads_file)
 
         print hdr.format("read name", "refseq", "gene", "genelen", \
-                         "regio", "%", "gene%")
+                         "regio", "%", "gene%", "D-end")
         
         reader = csv.DictReader(in_handle, delimiter='\t',
                                   fieldnames=['rchr', 'rpos', 'rend', 'rname', 'junk',
@@ -600,13 +601,21 @@ def process_reads(reads_file, knowngenes, opt, stats):
             else:			# reverse strand
                 dist_cdr_start += exon.end - int(row['rend'])
 
-            # Calculate distance from end of CDS.
+            # Calculate distance of the beginning of the read from end of CDS.
             #
             dist_cds_end = exon.cds.end
             if (gene.strand == 1):	# forward strand
                 dist_cds_end += int(row['rpos']) - exon.start
             else:			# reverse strand
                 dist_cds_end += exon.end - int(row['rend'])
+
+            # calculate position w.r.t. end of the transcript
+            #
+            delta_end = gene.len;
+            if (gene.strand == 1):	# forward strand
+                delta_end = gene.end - int(row['rpos'])
+            else:			# reverse strand
+                delta_end = int(row['rend']) - gene.start
 
             # calculate position w.r.t. beginning of the
             # transcript as a fraction of entire gene transcript length.
@@ -643,7 +652,7 @@ def process_reads(reads_file, knowngenes, opt, stats):
                 raise Exception
             
             print rec.format(row['rname'], gene.name, gene.common_name, \
-                             gene.len, pos_which, pos_pct, gpos_pct)
+                             gene.len, pos_which, pos_pct, gpos_pct, delta_end)
                 
             nmatched += 1
             if match_limit != None and nmatched >= match_limit:
