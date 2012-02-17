@@ -13,6 +13,7 @@ SCRIPTS=${MORRIS}/scripts
 knowngenes=${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes
 ADAPTER=TGGAATTCTCGGGTGCCAAGG
 LENGTH=20
+REVERSECOMPLEMENT=0
 
 all: ${aligner}_out/aligned_position_stats.txt
 
@@ -46,8 +47,12 @@ cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
 ${basename}.multilen.fq : ${rawreads}
-	${cmd} $^ | fastx_clipper -a ${ADAPTER} -l ${LENGTH} -Q33 -v >$@ 
-	#${cmd} $^ | cutadapt -o $@ -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin
+	#${cmd} $^ | fastx_clipper -a ${ADAPTER} -l ${LENGTH} -Q33 -v >$@ 
+ifeq ($(REVERSECOMPLEMENT),1)
+	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin | fastx_reverse_complement -Q33 -o $@
+else
+	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin 2>&1 >$@ | tee cutadapt.stats
+endif
 
 #
 # Align the reads.
@@ -55,14 +60,15 @@ ${basename}.multilen.fq : ${rawreads}
 #
 bowtie_out/bowtie_hits.sam : ${basename}.nonrrna.fq
 	@-mkdir -p $(dir $@)
-	bowtie --best --sam "/${INDEX_BASE}"  $^ >$@
+	bowtie --best -k 3 -v ${MISMATCHES} --sam "/${INDEX_BASE}"  $^ >$@
 
 bowtie_out/accepted_hits.bam: bowtie_out/bowtie_hits.sam
-	awk '/^@/ || $$3!="*"' <$^ | samtools view -Sbh /dev/stdin >$@
+	#awk '/^@/ || $$3!="*"' <$^ | samtools view -Sbh /dev/stdin >$@
+	${SCRIPTS}/sam_renamer <$^ | samtools view -Sbh /dev/stdin >$@
 
 tophat_out/accepted_hits.bam: ${basename}.nonrrna.fq 
 	@-mkdir -p $(dir $@)
-	tophat --segment-length 10 --segment-mismatches 0 -G  ${knowngenes}.gtf  "/${INDEX_BASE}" $^
+	tophat --segment-length 10 --segment-mismatches ${MISMATCHES} -G  ${knowngenes}.gtf  "/${INDEX_BASE}" $^
 
 #
 # filter out alignments that have more than ${MISMATCHES} base mismatches.
@@ -101,16 +107,16 @@ ${aligner}_out/overlaps_exons_uniq.bed: ${aligner}_out/overlaps_exons.bed
 	awk '{ print $$_"\t"$$4; }' <$^ | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >$@
 
 ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.bed
-	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^  >$@ 2>${aligner}_out/rpos_dist_stats.txt
+	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^ 2>&1  >$@ | tee ${aligner}_out/rpos_dist_stats.txt
 
 #
 # pseudo target to calculate various statistics about the workflow.
 #
 stats: read_stats alignment_stats
 
-alignment__stats : ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_nojunc.bam ${aligner}_out/overlaps_exons.bed ${aligner}_out/overlaps_exons_uniq.bed
+alignment_stats : ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_nojunc.bam ${aligner}_out/overlaps_exons.bed ${aligner}_out/overlaps_exons_uniq.bed
 	@echo -n "perfect alignments:\t"
-	#@echo -n $$(awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq|wc -l)"\t"	
+	@echo -n $$(awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq|wc -l)"\t"	
 	@awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq -c| awk '{ total += $$1 } END { print "perfect alignments:",NR,total; }'
 
 	@echo -n "w/o junctions:\t"
