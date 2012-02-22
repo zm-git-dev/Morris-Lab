@@ -110,6 +110,21 @@ ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.be
 	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^ 2>&1  >$@ | tee ${aligner}_out/rpos_dist_stats.txt
 
 #
+# Targets for detecting ligase-bias
+#
+ligase-bias : ${aligner}_out/bestseq.txt
+	echo "5' distribition"
+	sed 's/\(.\).*/\1/' <$^ | sort | uniq -c | sort -k 2
+	echo "3' distribution"
+	sed 's/.*\(.\)/\1/' <$^ | sort | uniq -c | sort -k 2
+
+${aligner}_out/bestseq.txt : ${aligner}_out/bestreads.txt  ${aligner}_out/accepted_hits.bam
+	samtools view ${aligner}_out/accepted_hits.bam | fgrep -f  ${aligner}_out/bestreads.txt | cut -f 10 | grep -v N >$@
+
+${aligner}_out/bestreads.txt : ${aligner}_out/aligned_position_stats.txt
+	cut -f 1 $^ | sed 's/\/[0-9]*/\/1/' | head -50000 | sort | uniq >$@
+
+#
 # pseudo target to calculate various statistics about the workflow.
 #
 stats: read_stats alignment_stats
