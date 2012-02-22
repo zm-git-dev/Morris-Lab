@@ -1,9 +1,13 @@
 
-rawreads=reads.fq
+rawreads ?= reads.fq
+MISMATCHES ?= 0
+aligner ?= tophat
+GENOME ?= mm9
+ADAPTER ?= TGGAATTCTCGGGTGCCAAGG
+LENGTH ?= 20
+REVERSECOMPLEMENT ?= 0
+
 basename=$(basename $(notdir ${rawreads}))
-MISMATCHES=0
-aligner=tophat
-GENOME=mm9
 INDEX_BASE=${GENOME}/${GENOME}
 RRNA_BASE=${GENOME}/rrna
 REFSEQ_BASE=${GENOME}
@@ -11,9 +15,6 @@ MORRIS=/home/csw/Morris-Lab
 REFDIR=/usr/local/share/genome
 SCRIPTS=${MORRIS}/scripts
 knowngenes=${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes
-ADAPTER=TGGAATTCTCGGGTGCCAAGG
-LENGTH=20
-REVERSECOMPLEMENT=0
 
 all: ${aligner}_out/aligned_position_stats.txt
 
@@ -47,7 +48,6 @@ cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
 ${basename}.multilen.fq : ${rawreads}
-	#${cmd} $^ | fastx_clipper -a ${ADAPTER} -l ${LENGTH} -Q33 -v >$@ 
 ifeq ($(REVERSECOMPLEMENT),1)
 	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin | fastx_reverse_complement -Q33 -o $@
 else
@@ -112,17 +112,18 @@ ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.be
 #
 # Targets for detecting ligase-bias
 #
-ligase-bias : ${aligner}_out/bestseq.txt
-	echo "5' distribition"
-	sed 's/\(.\).*/\1/' <$^ | sort | uniq -c | sort -k 2
-	echo "3' distribution"
-	sed 's/.*\(.\)/\1/' <$^ | sort | uniq -c | sort -k 2
+raw-ligase-bias :  ${basename}.multilen.fq
+	@echo "5' distribition"
+	@${SCRIPTS}/reads <$^ |  grep -v N | sed 's/\(.\).*/\1/' | sort | uniq -c | sort -k 2
+	@echo "3' distribution"
+	@${SCRIPTS}/reads <$^ |  grep -v N | sed 's/.*\(.\)/\1/' | sort | uniq -c | sort -k 2
 
-${aligner}_out/bestseq.txt : ${aligner}_out/bestreads.txt  ${aligner}_out/accepted_hits.bam
-	samtools view ${aligner}_out/accepted_hits.bam | fgrep -f  ${aligner}_out/bestreads.txt | cut -f 10 | grep -v N >$@
+raw-rc-ligase-bias :  ${basename}.multilen.fq
+	@echo "5' distribition"
+	@${SCRIPTS}/reads <$^ |  grep -v N | ${SCRIPTS}/rc.pl | sed 's/\(.\).*/\1/' | sort | uniq -c | sort -k 2
+	@echo "3' distribution"
+	@${SCRIPTS}/reads <$^ |  grep -v N | ${SCRIPTS}/rc.pl | sed 's/.*\(.\)/\1/' | sort | uniq -c | sort -k 2
 
-${aligner}_out/bestreads.txt : ${aligner}_out/aligned_position_stats.txt
-	cut -f 1 $^ | sed 's/\/[0-9]*/\/1/' | head -50000 | sort | uniq >$@
 
 #
 # pseudo target to calculate various statistics about the workflow.
