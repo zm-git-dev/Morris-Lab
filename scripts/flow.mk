@@ -11,7 +11,7 @@ basename=$(basename $(notdir ${rawreads}))
 INDEX_BASE=${GENOME}/${GENOME}
 RRNA_BASE=${GENOME}/rrna
 REFSEQ_BASE=${GENOME}
-MORRIS=/home/csw/Morris-Lab
+MORRIS=~/Morris-Lab
 REFDIR=/usr/local/share/genome
 SCRIPTS=${MORRIS}/scripts
 knowngenes=${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes
@@ -104,7 +104,7 @@ ${aligner}_out/overlaps_exons.bed: ${aligner}_out/accepted_hits_nojunc.bam
 	intersectBed -abam $^ -b ${knowngenes}_exons.bed -s -f 1.0 -wa -wb -bed > $@
 
 ${aligner}_out/overlaps_exons_uniq.bed: ${aligner}_out/overlaps_exons.bed
-	awk '{ print $$_"\t"$$4; }' <$^ | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >$@
+	awk '{ print $$0"\t"$$4; }' <$^ | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >$@
 
 ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.bed
 	python ${SCRIPTS}/rpos_dist.py ${knowngenes}.txt $^ 2>&1  >$@ | tee ${aligner}_out/rpos_dist_stats.txt
