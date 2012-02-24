@@ -113,13 +113,13 @@ ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.be
 # Targets for detecting ligase-bias
 #
 raw-ligase-bias :  ${basename}.multilen.fq
-	@echo "5' distribition"
+	@echo "5' distribution"
 	@${SCRIPTS}/reads <$^ |  grep -v N | sed 's/\(.\).*/\1/' | sort | uniq -c | sort -k 2
 	@echo "3' distribution"
 	@${SCRIPTS}/reads <$^ |  grep -v N | sed 's/.*\(.\)/\1/' | sort | uniq -c | sort -k 2
 
 raw-rc-ligase-bias :  ${basename}.multilen.fq
-	@echo "5' distribition"
+	@echo "5' distribution"
 	@${SCRIPTS}/reads <$^ |  grep -v N | ${SCRIPTS}/rc.pl | sed 's/\(.\).*/\1/' | sort | uniq -c | sort -k 2
 	@echo "3' distribution"
 	@${SCRIPTS}/reads <$^ |  grep -v N | ${SCRIPTS}/rc.pl | sed 's/.*\(.\)/\1/' | sort | uniq -c | sort -k 2
