@@ -54,13 +54,16 @@ else
 	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin 2>&1 >$@ | tee cutadapt.stats
 endif
 
+bowtie_out/bowtie_xmrv_hits.sam : bowtie_out/bowtie_hits.sam
+	bowtie --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/xmrv"  bowtie_out/bowtie_nomatch.fastq >$@
+
 #
 # Align the reads.
 # We can use either bowtie or tophat, depending on the target.
 #
 bowtie_out/bowtie_hits.sam : ${basename}.nonrrna.fq
 	@-mkdir -p $(dir $@)
-	bowtie --best -k 3 -v ${MISMATCHES} --sam "/${INDEX_BASE}"  $^ >$@
+	bowtie --un bowtie_out/bowtie_nomatch.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ >$@
 
 bowtie_out/accepted_hits.bam: bowtie_out/bowtie_hits.sam
 	#awk '/^@/ || $$3!="*"' <$^ | samtools view -Sbh /dev/stdin >$@
@@ -81,7 +84,8 @@ ${aligner}_out/accepted_hits_perfect.sam: ${aligner}_out/accepted_hits.bam
 # filter out reads that align to ribosomal DNA
 #
 ${basename}.nonrrna.fq : ${basename}.multilen.fq
-	bowtie --un $@ "${RRNA_BASE}" $^ >/dev/null  
+	#bowtie --un $@ "${RRNA_BASE}" $^ >/dev/null  
+	bowtie --un $@ "${REFDIR}/${GENOME}/rrna" $^ >/dev/null  
 
 
 #
@@ -113,6 +117,8 @@ ${aligner}_out/aligned_position_stats.txt: ${aligner}_out/overlaps_exons_uniq.be
 # Targets for detecting ligase-bias
 #
 raw-ligase-bias :  ${basename}.multilen.fq
+	paste <($5primebias) <($3primebias)
+
 	@echo "5' distribution"
 	@${SCRIPTS}/reads <$^ |  grep -v N | sed 's/\(.\).*/\1/' | sort | uniq -c | sort -k 2
 	@echo "3' distribution"
