@@ -1,4 +1,3 @@
-
 rawreads ?= reads.fq
 MISMATCHES ?= 0
 aligner ?= tophat
@@ -23,7 +22,7 @@ clean: clean-common clean-bowtie clean-tophat
 clean-common:
 	-rm -f ${basename}.multilen.fq
 	-rm -f ${basename}.nonrrna.fq
-	-rm -f cutadap.out clipstats.txt
+	-rm -f cutadapt.stats clipstats.txt
 
 clean-tophat: 
 	-rm -f tophat_out/aligned_position_stats.txt  tophat_out/overlaps_exons_uniq.bed tophat_out/accepted_hits_nojunc.bam tophat_out/accepted_hits_perfect.bam
@@ -54,8 +53,10 @@ else
 	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin 2>&1 >$@ | tee cutadapt.stats
 endif
 
-bowtie_out/bowtie_xmrv_hits.sam : bowtie_out/bowtie_hits.sam
-	bowtie --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/xmrv"  bowtie_out/bowtie_nomatch.fastq >$@
+bowtie_out/bowtie_viral_hits.sam : bowtie_out/bowtie_nomatch.fastq
+	bowtie --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/viruses"  $^ >$@
+
+bowtie_out/bowtie_nomatch.fastq : bowtie_out/bowtie_hits.sam
 
 #
 # Align the reads.
@@ -63,7 +64,7 @@ bowtie_out/bowtie_xmrv_hits.sam : bowtie_out/bowtie_hits.sam
 #
 bowtie_out/bowtie_hits.sam : ${basename}.nonrrna.fq
 	@-mkdir -p $(dir $@)
-	bowtie --un bowtie_out/bowtie_nomatch.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ >$@
+	bowtie -p 4 --un bowtie_out/bowtie_nomatch.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ >$@
 
 bowtie_out/accepted_hits.bam: bowtie_out/bowtie_hits.sam
 	#awk '/^@/ || $$3!="*"' <$^ | samtools view -Sbh /dev/stdin >$@
@@ -85,7 +86,7 @@ ${aligner}_out/accepted_hits_perfect.sam: ${aligner}_out/accepted_hits.bam
 #
 ${basename}.nonrrna.fq : ${basename}.multilen.fq
 	#bowtie --un $@ "${RRNA_BASE}" $^ >/dev/null  
-	bowtie --un $@ "${REFDIR}/${GENOME}/rrna" $^ >/dev/null  
+	bowtie -p 4 --un $@ "${REFDIR}/${GENOME}/rrna" $^ >/dev/null  
 
 
 #
