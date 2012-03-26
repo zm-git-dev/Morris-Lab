@@ -16,7 +16,6 @@ def main(argv = None):
     title = None
     marker=','
     nbins = None
-    regions = [ "5'-UTR", "CDS", "3'-UTR"  ]
     
     try:
         opts, args = getopt.getopt(argv, "hx:y:t:b:m:r:d", ["help", "output="])
@@ -36,8 +35,6 @@ def main(argv = None):
             ylabel = arg                  
         elif opt == '-t':                
             title = arg                  
-        elif opt == '-r':                
-            regions = arg.split()
         elif opt == '-b':                
             nbins = int(arg)
         elif opt == '-m':   # choose plot marker
@@ -62,29 +59,24 @@ def main(argv = None):
 # calculate coverage across percentage positions of each region of the
 # gene (e.g. 3'-UTR, CDS, 5'-UTR).
 
-    regionmaps = dict()
-    for r in regions: regionmaps[r] = dict()
+    regionmap = dict()
     in_handle = None
     try:
         in_handle = open(infile)
 
-        y = list()
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for row in g_reader:
-            if row["regio"] in regions:
-                if nbins is not None:
-                    bin = float(row['%']) / (100.0/nbins)
-                    bin = (int(bin) * (100.0/nbins)) + (100.0/nbins)/2.0
-                else:
-                    bin = float(row['%'])
-                regionmap = regionmaps[row["regio"]]
-                if bin in regionmap:
-                    regionmap[bin].add(row['refseq'])
-                    pass
-                    
-                else:
-                    regionmap[bin] = set()
-                    regionmap[bin].add(row['refseq'])
+            if nbins is not None:
+                bin = float(row['%']) / (100.0/nbins)
+                bin = (int(bin) * (100.0/nbins)) + (100.0/nbins)/2.0
+            else:
+                bin = float(row['%'])
+
+            if bin in regionmap:
+                regionmap[bin].add(row['refseq'])
+            else:
+                regionmap[bin] = set()
+                regionmap[bin].add(row['refseq'])
 
     finally:
         if in_handle is not None:
@@ -92,49 +84,31 @@ def main(argv = None):
 
 
     fig = plt.figure(1)
+    ax = fig.add_subplot(111)
 
     # Adjust space around the outside of the plots.
     fig.subplots_adjust(hspace=0.0001, wspace=0.0001,
                         bottom=0.07, 
                         left=0.05, right=0.96)
     
+
     # Provide a default title if the user did not supply one.
     if title is not None:
         fig.suptitle(title, fontsize=12)
 
-    plotnum = 1
-    for region in regions:
-        regionmap = regionmaps[region]
+    x = list()
+    y = list()
+    for k in regionmap.keys():
+        x.append(k)
+        y.append(len(regionmap[k]))
 
-        x = list()
-        y = list()
-        for k in regionmap.keys():
-             x.append(k)
-             y.append(len(regionmap[k]))
+    plt.scatter(x,y,s=20,color='tomato')
 
-        if plotnum == 1:
-            ax = fig.add_subplot(1,3,plotnum)
-            ax1 = ax
-        else:
-            ax = fig.add_subplot(1,3,plotnum, sharey=ax1)
+    plt.xlim(0,100)
 
-        plt.scatter(x,y,s=20,color='tomato')
+    ax.set_xlabel("Percent of gene")
 
-        title = region
-        ax.set_title(title)
-        plt.xlim(0,100)
-
-        if plotnum > 1:
-            plt.setp(ax.get_yticklabels(), visible=False)
-            plt.xticks((0,20,40,60,80,100),("","20","40","60","80","100"))
-            
-        xlabel = "Percent of %s region" % region
-        ax.set_xlabel(xlabel)
-
-        if plotnum is 1:
-            ylabel = "# genes with mapped fragments"
-            ax.set_ylabel(ylabel)
-        plotnum += 1
+    ax.set_ylabel("# genes with mapped fragments")
 
     plt.show()
 
