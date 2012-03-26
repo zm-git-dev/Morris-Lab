@@ -67,10 +67,10 @@ def main(argv = None):
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for row in g_reader:
             if nbins is not None:
-                bin = float(row['%']) / (100.0/nbins)
+                bin = float(row['gene%']) / (100.0/nbins)
                 bin = (int(bin) * (100.0/nbins)) + (100.0/nbins)/2.0
             else:
-                bin = float(row['%'])
+                bin = float(row['gene%'])
 
             if bin in regionmap:
                 regionmap[bin] += 1
