@@ -1,7 +1,6 @@
 #!/usr/bin/perl
 #use strict;
 use IO::File;
-use Bio::SeqIO;
 use Carp;
 
 
@@ -30,7 +29,7 @@ my $bar;
 my $bc;
 my $element;
 
-load_barcode_file ("../../barcodes");
+load_barcode_file ("barcodes");
 
 create_output_files();
 
