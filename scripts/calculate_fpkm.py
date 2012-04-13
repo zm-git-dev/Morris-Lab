@@ -62,6 +62,17 @@ class Gene:
 
 
 def main(argv = None):
+    """
+    Prepare datafile to be used by fpkm_scatter.py.  This program
+    reads from stdin and send it output to stdout.
+
+    Input to this routine is aligned_position_stats.txt (which is the
+    output of rpos_dist.py). Output from this routine is a text file
+    suitable for passing to fpkm_scatter.py
+
+    Usage:
+    	calculate_fpkm.py <bowtie_out/aligned_position_stats.txt >fpkm.txt
+    """
     if argv is None:
         argv = sys.argv
 
