@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# cuffscatter.py
+# fpkm_scatter.py
 # 
 #
 # Compare two datasets by making a scatterplot of both.
@@ -291,6 +291,9 @@ def main(argv = None):
         title = "Comparison of %s and %s" % (xlabel, ylabel)
     if title is not None:
         ax.set_title(title)
+
+    # Print the command-line that invoked this plot.
+    plt.figtext(.5,0.005, " ".join(sys.argv), alpha=.3, ha='center')
 
     af =  AnnoteFinder(x,y, annotes)
     ax.format_coord = lambda x,y : af.findAnnote(x, y)
