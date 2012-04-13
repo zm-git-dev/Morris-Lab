@@ -46,11 +46,13 @@ plot: ${aligner}_out/aligned_position_stats.txt
 cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
-${basename}.multilen.fq : ${rawreads}
+multilen.fq : ${basename}.multilen.fq
+
+${basename}.multilen.fq tooshort.fq  : ${rawreads}
 ifeq ($(REVERSECOMPLEMENT),1)
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin | fastx_reverse_complement -Q33 -o $@
+	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
 else
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} /dev/stdin 2>&1 >$@ | tee cutadapt.stats
+	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2>&1 >$@ | tee cutadapt.stats
 endif
 
 bowtie_out/bowtie_viral_hits.sam : bowtie_out/bowtie_nomatch.fastq
@@ -137,6 +139,10 @@ raw-rc-ligase-bias :  ${basename}.multilen.fq
 #
 stats: read_stats alignment_stats
 
+read_stats:
+	cat cutadapt.stats
+
+
 alignment_stats : ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accepted_hits_nojunc.bam ${aligner}_out/overlaps_exons.bed ${aligner}_out/overlaps_exons_uniq.bed
 	@echo -n "perfect alignments:\t"
 	@echo -n $$(awk '!/^@/ {print $$1}' ${aligner}_out/accepted_hits_perfect.sam | sort|uniq|wc -l)"\t"	
@@ -153,6 +159,24 @@ alignment_stats : ${aligner}_out/accepted_hits_perfect.sam ${aligner}_out/accept
 	@echo -n "one gene @ locus:\t"
 	@echo -n $$(awk '{ print $$4; }' <  ${aligner}_out/overlaps_exons_uniq.bed | sort | uniq -c | wc -l )"\t"
 	@echo $$(wc -l <  ${aligner}_out/overlaps_exons_uniq.bed)
+
+
+
+# Calculate a distribution of which remnants are too short.
+#
+# After the adapter has been stripped from the 3'-end of the reads,
+# many reads are too short to process further (usually less than
+# 20nt).  This rule calculates the variantion among remaining
+# fragments after stripping the adapter.  Fragments that are
+# completely empty (length=0) represent adapter-dimers.
+#
+# Note: To speed calculation, only the first million fragments are considered.
+# 
+
+too-short : tooshort.fq
+	# Look at the first million fragments after stripping adapter.
+	$(SCRIPTS)/reads tooshort.fq | head -1000000 | sort | uniq -c | sort -rn 
+
 
 .PHONY: clean clean-tophat clean-bowtie clobber clobber-tophat clobber-bowtie stats
 
