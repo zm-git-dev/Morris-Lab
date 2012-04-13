@@ -67,10 +67,10 @@ def main(argv = None):
         g_reader = csv.DictReader(in_handle, delimiter='\t')
         for row in g_reader:
             if nbins is not None:
-                bin = float(row['gene%']) / (100.0/nbins)
+                bin = float(row['%']) / (100.0/nbins)
                 bin = (int(bin) * (100.0/nbins)) + (100.0/nbins)/2.0
             else:
-                bin = float(row['gene%'])
+                bin = float(row['%'])
 
             if bin in regionmap:
                 regionmap[bin] += 1
@@ -92,22 +92,23 @@ def main(argv = None):
     
 
     # Provide a default title if the user did not supply one.
-    if title is not None:
-        fig.suptitle(title, fontsize=12)
+    if title is None:
+        title = "Read position vs. Gene length"
+    fig.suptitle(title, fontsize=16)
 
-    x = list()
-    y = list()
-    for k in regionmap.keys():
-        x.append(k)
-        y.append(regionmap[k])
+    # Print the command-line that invoked this plot.
+    plt.figtext(.5,0.005, " ".join(sys.argv), alpha=.3, ha='center')
+
+    x = regionmap.keys()
+    y = map(lambda k: regionmap[k], x)
 
     plt.scatter(x,y,s=20,color='tomato')
 
     plt.xlim(0,100)
 
-    ax.set_xlabel("Percent of gene")
+    ax.set_xlabel("% of gene length", fontsize=14)
 
-    ax.set_ylabel("# reads")
+    ax.set_ylabel("# reads", fontsize=14)
 
     plt.show()
 

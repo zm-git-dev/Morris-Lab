@@ -96,19 +96,23 @@ def main(argv = None):
     if title is not None:
         fig.suptitle(title, fontsize=12)
 
-    x = list()
-    y = list()
-    for k in regionmap.keys():
-        x.append(k)
-        y.append(len(regionmap[k]))
+    # Provide a default title if the user did not supply one.
+    if title is None:
+        title = "Ribosome position vs. Gene length"
+    fig.suptitle(title, fontsize=16)
+
+    # Print the command-line that invoked this plot.
+    plt.figtext(.5,0.005, " ".join(sys.argv), alpha=.3, ha='center')
+
+    x = regionmap.keys()
+    y = map(lambda k: len(regionmap[k]), x)
 
     plt.scatter(x,y,s=20,color='tomato')
 
     plt.xlim(0,100)
 
-    ax.set_xlabel("Percent of gene")
-
-    ax.set_ylabel("# genes with mapped fragments")
+    ax.set_xlabel("Percent of gene", fontsize=14)
+    ax.set_ylabel("# genes with mapped fragments", fontsize=14)
 
     plt.show()
 

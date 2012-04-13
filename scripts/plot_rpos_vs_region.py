@@ -106,11 +106,8 @@ def main(argv = None):
     for region in regions:
         regionmap = regionmaps[region]
 
-        x = list()
-        y = list()
-        for k in regionmap.keys():
-             x.append(k)
-             y.append(len(regionmap[k]))
+        x = regionmap.keys()
+        y = map(lambda k: len(regionmap[k]), x)
 
         if plotnum == 1:
             ax = fig.add_subplot(1,3,plotnum)
@@ -135,6 +132,9 @@ def main(argv = None):
             ylabel = "# genes with mapped fragments"
             ax.set_ylabel(ylabel)
         plotnum += 1
+
+    # show the command-line that invoked this plot.
+    plt.figtext(.5,0.005, " ".join(sys.argv), alpha=.3, ha='center')
 
     plt.show()
 
