@@ -11,7 +11,7 @@ my @filehandles;
 # (1) quit unless we have the correct number of command-line args
 my($num_args) = $#ARGV + 1;
 if ($num_args != 2) {
-  print "\nUsage: name.pl first_name last_name\n";
+  print "\nUsage: name.pl sequence_file barcode_file\n";
   exit;
 }
 
