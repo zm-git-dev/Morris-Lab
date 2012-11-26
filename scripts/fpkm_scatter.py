@@ -41,7 +41,6 @@
 #		Use -m 'o' for a larger round mark that is easier to see.
 #
 
-
 import csv
 import sys
 import getopt
@@ -228,7 +227,11 @@ def main(argv = None):
         for k in set(genes1.keys()).difference(genes2.keys()):
             del genes1[k]
 
-    keys = sorted(genes1, key=lambda key: genes1[key].fpkm+genes2[key].fpkm, reverse=True)
+    keys = genes1.keys()
+
+#    keys = filter(lambda k: genes1[k].fpkm > 10 and genes2[k].fpkm > 10, keys)
+
+    keys = sorted(keys, key=lambda key: genes1[key].fpkm+genes2[key].fpkm, reverse=True)
 
     if nsamples is not None:
         nsamples = min(nsamples, len(keys))
