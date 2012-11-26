@@ -1,0 +1,77 @@
+#!/bin/bash
+# usage: sql_enter_expressions 061212_A accepted_hits.sam
+#
+# Usually I have to preceed this with 
+#	samtools view accepted_hits.bam >accepted_hits.sam
+#
+#  No that won't work because the sam file still has the header on it.
+#
+# Note that this script will NOT work is the <file> is not a text file.
+# e.g. you cannot use this as sql_enter_alignments 061212_A /dev/stdin
+# That won't work!
+
+function usage {
+    echo "usage: $0 <dataset> <expression_file>"
+    echo "e.g. $0 073012_A_MM1  bowtie_hits.sam"
+}
+
+
+while getopts ":h" opt; do
+  case $opt in
+    a)
+      usage;
+      exit 1;
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+if [[ $# < 2 ]]; then
+    usage;
+    exit 1;
+fi
+
+dataset=$1;
+file=$2;
+file=$(readlink -f ${file})
+echo ${file}
+
+
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+
+SET @id = (SELECT id FROM datasets_tbl WHERE name LIKE '${dataset}');
+SET @genome = (SELECT genome FROM datasets_tbl WHERE name LIKE '${dataset}');
+
+select @id as 'dataset';
+select @genome as 'genome';
+
+CREATE TEMPORARY TABLE tmp_expressions_tbl (
+  \`dataset_id\` int(4) NOT NULL,
+  \`gene_name\` varchar(50) NULL,
+  \`rawcount\` int(4) DEFAULT '0',
+  \`FPKM\` float DEFAULT '0'
+);
+
+LOAD DATA LOCAL INFILE '${file}'
+    INTO TABLE tmp_expressions_tbl IGNORE 1 LINES 
+    (gene_name, FPKM, @dummy, @dummy, rawcount, @dummy)
+    SET dataset_id = @id;
+
+# select count(*) from tmp_expressions_tbl;
+# select * from tmp_expressions_tbl;
+
+## truncate morris.alignments_tbl;
+delete from expression_tbl where dataset_id=@id;
+
+INSERT INTO expression_tbl 
+    (dataset_id, gene_id, rawcount, FPKM)
+    SELECT 
+    e.dataset_id, kg.id, e.rawcount, e.FPKM
+    FROM tmp_expressions_tbl e 
+    INNER JOIN knowngenes_tbl kg ON e.gene_name=kg.name and kg.genome=genome;
+
+
+END-SQL

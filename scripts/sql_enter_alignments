@@ -1,0 +1,136 @@
+#!/bin/bash
+# usage: sql_enter_alignments 061212_A_MM1 accepted_hits.sam
+#        sql_enter_alignments 061212_A_MM1 accepted_hits.bam
+#
+#  No that won't work because the sam file still has the header on it.
+#
+# Note that this script will NOT work is the <file> is not a text file.
+# e.g. you cannot use this as sql_enter_alignments 061212_A_MM1 /dev/stdin
+# That won't work!
+
+function usage {
+    echo "usage: $0 <dataseet> <alignment_file>"
+    echo "e.g. $0 073012_A_MM1 accepted_hits.bam"
+    echo "   . $0 073012_A_MM1 accepted_hits.sam"
+}
+
+
+while getopts ":h" opt; do
+  case $opt in
+    a)
+      usage;
+      exit 1;
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+if [[ $# < 2 ]]; then
+    usage;
+    exit 1;
+fi
+
+expr=$1;
+file=$2;
+file=$(readlink -f ${file})
+
+tmpfile=$(mktemp)
+trap "rm -f $tmpfile" EXIT
+
+alignment_cmd=""
+
+case "$(file ${file})" in
+    *ASCII* )
+	# do nothing special
+         ;;
+    *"gzip compressed"* )
+        #samtools view ${file} >$tmpfile
+	echo "samtools view -H ${file} | grep @PG | sed 's/^.*CL://'"
+	alignment_cmd="$(samtools view -H ${file} | grep @PG | sed 's/^.*CL://')"	
+	file="${tmpfile}"
+	;;
+    *)
+	echo "Unrecognized file type - ${file}"
+	exit 1;;
+esac
+
+# (tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+
+use morris;
+
+CREATE TEMPORARY TABLE tmp_alignments_tbl (
+  \`name\` varchar(50) NOT NULL,
+  \`dataset_id\` int(4) NOT NULL,
+  \`chrom\` varchar(50) NOT NULL,
+  \`strand\` tinyint(1) NOT NULL,
+  \`position\` int(4) unsigned NOT NULL,
+  \`length\` int(4) unsigned NOT NULL,
+  \`CIGAR\` varchar(50) NOT NULL,
+key(name)
+);
+
+CREATE TEMPORARY TABLE tmp_names_tbl (
+  \`id\` int(4) NOT NULL AUTO_INCREMENT,
+  \`name\` varchar(50) UNIQUE NOT NULL,
+  PRIMARY KEY (id),
+  KEY(name)
+);
+
+## insert alignments into a temporary tables allowing for duplicate
+## read names
+##
+
+SET @id = (SELECT id FROM datasets_tbl WHERE name LIKE '${expr}');
+select @id as \`datasets ${expr}\`;
+LOAD DATA LOCAL INFILE '${file}'
+    INTO TABLE tmp_alignments_tbl  
+    (name, @flags, chrom, position, @dummy, CIGAR, @dummy, @dummy, @dummy, @sequence)
+    SET dataset_id = @id, 
+        strand = (CASE (@flags & 16) when 16 then FALSE else TRUE END ),
+        length = CHAR_LENGTH(@sequence);
+
+
+## SELECT * FROM morris.tmp_alignments_tbl;
+
+## Copy the names column into a temporary table that does not allow
+## duplicates and whic assigns a uniqe id to each name
+
+INSERT INTO morris.tmp_names_tbl (name) 
+SELECT DISTINCT name FROM morris.tmp_alignments_tbl;
+
+## count the number of unique names just as a sanity check.
+## select COUNT(*) from morris.tmp_names_tbl;
+
+## Copy all columns except name from the temporary alignment table,
+## replacing the name with the unique id from the temporary names
+## table.
+## truncate morris.alignments_tbl;
+delete from morris.alignments_tbl where dataset_id=@id;
+
+INSERT INTO morris.alignments_tbl 
+    (dataset_id, read_id, chrom, strand, position, length, CIGAR)
+    SELECT 
+    a.dataset_id, n.id, a.chrom, a.strand, a.position, a.length, a.CIGAR
+    FROM tmp_alignments_tbl a 
+    INNER JOIN tmp_names_tbl n ON a.name=n.name;
+
+END-SQL
+
+
+ 
+if [ ! -z "$alignment_cmd" ]
+then
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+
+use morris;
+UPDATE \`morris\`.\`datasets_tbl\` SET \`alignment_cmd\`='${alignment_cmd}' WHERE name LIKE '${expr}';
+
+END-SQL
+
+fi
+
+# end of script

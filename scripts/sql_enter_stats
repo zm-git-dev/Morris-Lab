@@ -1,0 +1,114 @@
+#!/bin/bash
+# usage: sql_enter_stats 061212_A 
+#
+#
+
+function usage {
+    echo "usage: $0 [-d <dataset>] <experiment>"
+    echo "e.g. $0 073012_A"
+}
+
+
+
+mismatch=1
+dataset=""
+genome="hg18"
+while getopts ":hm:d:g:" opt; do
+  case $opt in
+    h)
+      usage;
+      exit 1;
+      ;;
+    m)
+      mismatch=$OPTARG;
+      ;;
+    d)
+      dataset=$OPTARG;
+      ;;
+    g)
+      genome=$OPTARG;
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+shift $(($OPTIND-1))
+echo $@
+if [[ $# < 1 ]]; then
+    usage;
+    exit 1;
+fi
+expr=$1
+
+if [ -z "$dataset" ]; then
+    dataset=${expr}_MM${mismatch}
+fi
+
+read raw
+read trimmed
+read nonrrna
+read aligned
+read in_exons
+read in_uniq_exons
+
+
+# This SQL represents a real hack.  I wanted to create a dataset entry
+# and populate it with statistics.  If the dataset already existed then
+# just the statistics should be updated.  The problem is that the
+# dataset has a column that points to an experiment, and it is possible
+# that experiment does not exist!
+#
+# I wanted to use a conditional around some block of code to test
+# whether the 'experiment' entry exists, but this is only supported in
+# stored procedures.  That is why the code below creates a stored
+# procedure for a single use.
+
+
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+
+drop procedure IF EXISTS createdataset;
+delimiter //
+CREATE PROCEDURE createdataset (expr char(50))
+BEGIN
+    DECLARE expr_id INT(4);
+    SET expr_id=(SELECT id FROM experiments_tbl WHERE name LIKE expr);
+    IF expr_id IS NOT NULL THEN
+
+	 ## 'IGNORE' tells INSERT to only generate a warning if the
+	 ## row already exists, not an error.
+
+	 UPDATE \`morris\`.\`experiments_tbl\` SET 
+		\`raw_count\`='${raw}' where id=expr_id;
+
+
+	 INSERT IGNORE INTO \`morris\`.\`datasets_tbl\` (\`name\`,\`description\`) VALUES ('${dataset}', 'Created from sql_enter_stats $@');
+
+	 UPDATE \`morris\`.\`datasets_tbl\` SET 
+	 \`genome\`='${genome:-hg18}',
+	 \`expr_id\`=expr_id,
+	 \`mismatches\`='${mismatch}',
+		\`trimmed_count\`=${trimmed:-NULL},
+		\`nonrrna_count\`=${nonrrna:-NULL},
+		\`aligned_count\`=${aligned:-NULL},
+		\`in_exons_count\`=${in_exons:-NULL},
+		\`in_uniq_exons_count\`=${in_uniq_exons:-NULL}
+	 where name LIKE '${dataset}';
+     ELSE
+	 select concat("Error: missing experiment ",expr) as "";
+     END IF;
+END//
+
+delimiter ;
+
+
+CALL createdataset('${expr}');
+
+END-SQL
