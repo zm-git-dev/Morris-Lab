@@ -114,8 +114,8 @@ def main(argv = None):
             genes[gname] = gene
         else:
             gene = genes[gname]
-        gene.nfrags = gene.nfrags + 1
-        n_mapped_frags = n_mapped_frags + 1
+        gene.nfrags += 1
+        n_mapped_frags += 1
 
     # if the user supplied a value for mindepth (via command-line option),
     # filter out any gene that does not have at least that many
@@ -132,10 +132,11 @@ def main(argv = None):
     #
     # Calculate FPKM for each remaining gene and print the results.
     #
-    hdr = "{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}"
-    rec = "{0}\t{1:f}\t{2:f}\t{3:s}\t{4:d}"
+    hdr = "{0:s}\t{1:s}\t{2:s}\t{3:s}\t{4:s}\t{5:s}"
+    rec = "{0}\t{1:f}\t{2:s}\t{3:d}\t{4:d}\t{4:g}"
 
-    print hdr.format("tracking_id", "FPKM", "avgdepth", "gene", "coding")
+    #print hdr.format("tracking_id", "FPKM", "avgdepth", "gene", "coding")
+    print hdr.format("tracking_id", "FPKM", "gene", "coding", "rawcount", "scaledcount")
     
     m = float(n_mapped_frags)/(float(1000000))
     for name in genes.keys():
@@ -144,10 +145,9 @@ def main(argv = None):
         # print name, gene.len, k, m, n_mapped_frags
         fpk = (float(gene.nfrags) / k)
         fpkm = fpk / m
-        avgdepth = float(gene.nfrags)/float(gene.len)
 
         #print name, gene.nfrags, fpkm, k, m
-        print rec.format(name, fpkm, avgdepth, gene.common_name, gene.coding)
+        print rec.format(name, fpkm, gene.common_name, gene.coding, gene.nfrags, gene.nfrags/float(n_mapped_frags))
     
 
 def usage(msg = None):
