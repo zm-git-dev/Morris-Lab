@@ -5,7 +5,7 @@ library(RJSONIO) # acquiring and parsing data
 library(ggplot2) # graphs
 library(plyr)  # manipulating data
 library(lubridate) # manipulating dates
-library(stringr) manipulating strings
+library(stringr)  # manipulating strings
 
 # removes leading spaces - help in URL creation
 trim.leading <- function (x)  sub("^\\s+", "", x)
