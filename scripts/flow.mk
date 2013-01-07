@@ -81,7 +81,8 @@ $(BT)/bowtie_hits.sam : reads_nonrrna.fq
 
 $(BT)/accepted_hits.bam: $(BT)/bowtie_hits.sam
 	# ${SCRIPTS}/sam_renamer <$^ | samtools view -Sbh /dev/stdin >$@
-	awk '/^@/ { print; } !/^@/ && $$3!="*" { print | " sort -k 1 " }' $^ |samtools view -Sbh $^ >$@
+#	awk '/^@/ { print; } !/^@/ && $$3!="*" { print | " sort -k 1 " }' $^ |samtools view -Sbh $^ >$@
+	awk '/^@/ { print; } !/^@/ && $$3!="*" { print  }' $^ | samtools view -Sbh /dev/stdin >$@
 
 $(TH)/accepted_hits.bam: reads_nonrrna.fq 
 	@-mkdir -p $(dir $@)
