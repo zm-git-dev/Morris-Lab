@@ -182,14 +182,15 @@ too-short : tooshort.fq
 # aligned reads
 # in exons
 # in unique exons
-dbstats.txt:  bowtie_out/bowtie_aligned.fastq bowtie_out/overlaps_exons.bed 
+dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/overlaps_exons.bed 
 	@echo "making dbstats.txt..."
 	@grep "Processed reads" cutadapt.stats | awk '{print $$3}' >$@
 	@wc -l reads_trimmed.fq | awk '{print $$1/4}' >>$@
 	@grep "failed to align" rrna.stats | awk '{print $$7}' >>$@
-	@wc -l bowtie_out/bowtie_aligned.fastq | awk '{print $$1/4}' >>$@
-	@cut -f 4 bowtie_out/overlaps_exons.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
-	@cut -f 4 bowtie_out/overlaps_exons_uniq.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
+	@samtools view  ${aligner}_out/accepted_hits.bam | cut -f 1 | sort | uniq | wc -l  >>$@
+#	@wc -l ${aligner}_out/bowtie_aligned.fastq | awk '{print $$1/4}' >>$@
+	@cut -f 4 ${aligner}_out/overlaps_exons.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
+	@cut -f 4 ${aligner}_out/overlaps_exons_uniq.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
 
 db_stats:  dbstats.txt
 	$(SCRIPTS)/sql_enter_stats -g "$(GENOME)" -m "$(MISMATCHES)" -d "$(DATASET)" "$(EXPERIMENT)" <dbstats.txt
