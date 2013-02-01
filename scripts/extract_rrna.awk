@@ -1,4 +1,4 @@
-#!/bin/awk
+#!/bin/awk -f
 #
 # Extract a fragment of a FASTA sequence centered at a particular position.
 # NOTE: this script requires a fasta file on stdin that 
@@ -23,12 +23,12 @@
 # awk -f extract_rrna.awk 45S 12733 <~morrislab/genome/mm9/rrna.fa
 # --> TGTGGAACCTGGCGCTAAACCATTCGTAGA
 #
-function process_sequence(seqname, sequence, target, position) {
+function process_sequence(seqname, sequence, target, position, oligo_length) {
     n = split(seqname, names, "|");
     for (i = 1; i <= n; i++) {
 	where = match(names[i], target ".*");
 	if (where != 0) {
-	    print substr(sequence, position-15, 30)
+	    print position,substr(sequence, position-(oligo_length/2), oligo_length)
 	    exit;
 	}	    
     }	    
@@ -37,9 +37,17 @@ function process_sequence(seqname, sequence, target, position) {
 BEGIN {
     target = ARGV[1];
     position = ARGV[2] + 1;
-    in_sequence = 0;
     delete ARGV[1]
     delete ARGV[2]
+
+    oligo_length = 30;
+    if (ARGC > 3) {
+	oligo_length = ARGV[3];
+	delete ARGV[3];
+    }
+
+    # the state machine starts off not reading a sequence.
+    in_sequence = 0;
 }
 
 # skip comments in FASTA files.
@@ -50,7 +58,7 @@ BEGIN {
 # split across multiple lines.
 /^>/  {
     if (in_sequence == 1) {
-	process_sequence(seqname, sequence, target, position);
+	process_sequence(seqname, sequence, target, position, oligo_length);
 	sequence = "";
     }
 
@@ -60,13 +68,19 @@ BEGIN {
     next;
 }
 
+# If reading a sequence, just append each line to the growing sequence.
+#
+# We could do better than this and not store the whole sequence before extracting the fragment
+# but this simpler approach is good enough for now.   If the sequences are really long we would have to
+# revisit this.
+# 
 in_sequence == 1 {
     sequence = sequence $0;
 }
 
 END {
     if (in_sequence == 1) {
-	process_sequence(seqname, sequence, target, position);
+	process_sequence(seqname, sequence, target, position, oligo_length);
     }
 
 
