@@ -20,15 +20,18 @@ knowngenes=${REFDIR}/${REFSEQ_BASE}/${REFSEQ_BASE}_refseq_knowngenes
 TH=tophat_out
 BT=bowtie_out
 
-all: ${aligner}_out/aligned_position_stats.txt
+all: ${aligner}_out/accepted_final.sam
 
 clean: clean-common clean-bowtie clean-tophat
 
 clean-common:
 	-rm -f reads_trimmed.fq
-	-rm -f rrna_reads.fq reads_nonrrna.fq
+	-rm -f reads_rrna.fq reads_nonrrna.fq
 	-rm -f cutadapt.stats clipstats.txt
-	-rm -f rrna.stats tooshort.fq rrna_aligned.sam rrna.bam
+	-rm -f rrna.stats tooshort.fq rrna_aligned.sam 
+	-rm -f rrna.bam rrna.bam.bai rrna_depth.txt
+	-rm -f dbstats.txt
+	-rm -f sample.bam sample.bam.bai
 
 clean-tophat: 
 	-rm -f	$(TH)/aligned_position_stats.txt	\
@@ -88,12 +91,29 @@ $(TH)/accepted_hits.bam: reads_nonrrna.fq
 	@-mkdir -p $(dir $@)
 	BOWTIE_INDEXES="${BOWTIE_INDEXES}" tophat --segment-length 10 --segment-mismatches ${MISMATCHES} -G  ${knowngenes}.gtf  "/${INDEX_BASE}" $^
 
-#
-# filter out alignments that have more than ${MISMATCHES} base mismatches.
-# FIXME: this fails if there are 10 or more mismatches
-#
-${aligner}_out/accepted_hits_perfect.sam: ${aligner}_out/accepted_hits.bam
-	samtools view -h $^ | awk '/^@/ { print;} /NM:i:[0-9]+/ { if (int(substr($$0,match($$0, /NM:i:/)+5)) <= ${MISMATCHES}) print; }' >$@
+
+
+# exclude alignments that are aligned to more than one gene, or to no gene at all.
+# filter out alignments with more than ${MISMATCHES} mismatched bases.
+# filter out alignments that are aligned to more than one locus on the genome.
+# exclude alignments that are aligned to more than one gene, or to no gene at all.
+
+${aligner}_out/accepted_final.sam : ${aligner}_out/accepted_hits.bam
+	# filter out alignments with more than ${MISMATCHES} mismatched bases.
+	# filter out alignments that are aligned to more than one locus on the genome
+	samtools view $^ | awk '/NM:i:[0-9]+/ { if (int(substr($$0,match($$0, /NM:i:/)+5)) <= ${MISMATCHES}) print; }'  \
+	                 | awk '{ print $$0"\t"$$1; }' | uniq -f 14 -u | cut -f 1-14  >${aligner}_out/tmp.sam
+	#
+	# find overlaps with features.
+	#
+	htseq-count --mode=intersection-strict -o ${aligner}_out/overlaps_exons.sam  ${aligner}_out/tmp.sam \
+			"${REFDIR}/${GENOME}/${GENOME}_refseq_knowngenes.gtf" \
+	| awk '$$2 != 0 ' >${aligner}_out/gene_count.txt
+	#
+	# exclude alignments that are aligned to more than one gene, or to no gene at all.
+	#
+	(samtools view -H $^; awk '$$15 !~ "ambiguous|no_feature"'  ${aligner}_out/overlaps_exons.sam) >$@
+	rm -f ${aligner}_out/tmp.sam # ${aligner}_out/tmp2.sam
 
 #
 # filter out reads that align to ribosomal DNA
@@ -104,7 +124,7 @@ reads_nonrrna.fq : reads_trimmed.fq
 #
 # filter out alignments that are not continuous (they span an intron).
 # This really only applies to alignments from tophat for now, although
-# in the future, bowtie II will also find gapped alignments.
+# in the future, (I think) bowtie II will also find gapped alignments.
 #
 # The 6th field in a SAM record is a CIGAR string that indicates how
 # the read was aligned to the reference genome.  CIGAR strings of ##M
@@ -119,6 +139,28 @@ ${aligner}_out/accepted_hits_nojunc.bam:  ${aligner}_out/accepted_hits_perfect.s
 
 ${aligner}_out/overlaps_exons.bed: ${aligner}_out/accepted_hits_nojunc.bam
 	intersectBed -abam $^ -b ${knowngenes}_exons.bed -s -f 1.0 -wa -wb -bed |cut -f 1-6,13- > $@
+
+# remove any alignment that overlaps the genome in more than one place
+# (e.g. on chr19 and on chr3), -OR- which overlaps more than one
+# feature at a single locus (e.g. at chr19:1002002 overlaps two
+# isoforms of the same gene, or different genes.)
+#
+# This is a really tricky filter!
+# Basically we are filtering any duplicate alignments for the same
+# read.  This has the effect of filtering for aligments to multiple
+# loci, and for multiple alignments to the same locus but different
+# features (genes).  Its pretty tricky because a tool like
+# htseq-count, while filtering for ambiguous alignments to the same
+# locus, will not filter for multiple aligmnents to different loci.
+# You'll need to use a different tool if you use htseq-count.
+#
+# Update: No, the above explanation is slightly wrong.  Only duplicate
+# alignments that overlap multiple *features* (e.g. gene exons) are
+# removed here.  If the original alignment was ambiguous (aligned to
+# multiple loci in the genome), it will not be removed if only one of
+# those loci overlaps a feature!  This is probably wrong and not what
+# we want.
+
 
 ${aligner}_out/overlaps_exons_uniq.bed: ${aligner}_out/overlaps_exons.bed
 	awk '{ print $$0"\t"$$4; }' <$^ | sort -k 13 | uniq -f 12 -u | cut -f 1-12 >$@
@@ -182,35 +224,54 @@ too-short : tooshort.fq
 # aligned reads
 # in exons
 # in unique exons
-dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/overlaps_exons.bed 
+dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/accepted_final.sam
 	@echo "making dbstats.txt..."
 	@grep "Processed reads" cutadapt.stats | awk '{print $$3}' >$@
 	@wc -l reads_trimmed.fq | awk '{print $$1/4}' >>$@
 	@grep "failed to align" rrna.stats | awk '{print $$7}' >>$@
 	@samtools view  ${aligner}_out/accepted_hits.bam | cut -f 1 | sort | uniq | wc -l  >>$@
 #	@wc -l ${aligner}_out/bowtie_aligned.fastq | awk '{print $$1/4}' >>$@
-	@cut -f 4 ${aligner}_out/overlaps_exons.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
-	@cut -f 4 ${aligner}_out/overlaps_exons_uniq.bed | sed 's!/[0-9]!!' | sort | uniq | wc -l >>$@
+	@grep -v '^@' ${aligner}_out/overlaps_exons.sam | wc -l >>$@
+	@grep -v '^@' ${aligner}_out/accepted_final.sam | wc -l >>$@
 
 db_stats:  dbstats.txt
 	$(SCRIPTS)/sql_enter_stats -g "$(GENOME)" -m "$(MISMATCHES)" -d "$(DATASET)" "$(EXPERIMENT)" <dbstats.txt
 
-db_expressions: ${aligner}_out/fpkm.out
-	$(SCRIPTS)/sql_enter_expressions "$(DATASET)" "${aligner}_out/fpkm.out"
+db_alignments:  ${aligner}_out/accepted_final.sam 
+	$(SCRIPTS)/sql_enter_new_alignments "$(DATASET)" "${aligner}_out/accepted_final.sam"
 
-db_alignments:  ${aligner}_out/accepted_hits.bam 
-	$(SCRIPTS)/sql_enter_alignments "$(DATASET)" "${aligner}_out/accepted_hits.bam"
+database: db_stats db_alignments
 
-database: db_stats db_alignments db_expressions
+ ${aligner}_out/htseq_input.sam : ${aligner}_out/accepted_hits.bam
+	samtools view $< | awk '!/^@/ { print $$0"\t"$$1; }' | uniq -f 14 -u | cut -f 1-14 >$@
 
-${aligner}_out/final_alignments.bam: ${aligner}_out/overlaps_exons_uniq.bed
+ ${aligner}_out/htseq_hits.sam : ${aligner}_out/htseq_input.sam
+	htseq-count --mode=intersection-strict -o $@ $< ~morrislab/genome/mm9/mm9_refseq_knowngenes.gtf 
+
+${aligner}_out/htseq.bam: ${aligner}_out/htseq_hits.sam
+	(samtools view -H ${aligner}_out/accepted_hits.bam; \
+	 grep -v 'ambiguous\|no_feature' <$<) | \
+		samtools view -S -b /dev/stdin > ${aligner}_out/htseq.bam
+	samtools sort ${aligner}_out/htseq.bam ${aligner}_out/htseq_s
+	samtools index ${aligner}_out/htseq_s.bam
+	mv ${aligner}_out/htseq_s.bam  ${aligner}_out/htseq.bam
+	mv ${aligner}_out/htseq_s.bam.bai  ${aligner}_out/htseq.bam.bai
+
+ 
+${aligner}_out/final.bam: ${aligner}_out/overlaps_exons_uniq.bed
 	(samtools view -H ${aligner}_out/accepted_hits.bam; \
 	 samtools view ${aligner}_out/accepted_hits.bam | fgrep -f <( cut -f 4 $< )) | \
 		samtools view -S -b /dev/stdin > ${aligner}_out/igv.bam
 	samtools sort ${aligner}_out/igv.bam ${aligner}_out/igv_s
 	samtools index ${aligner}_out/igv_s.bam
-	mv ${aligner}_out/igv_s.bam  ${aligner}_out/final_alignments.bam
-	mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/final_alignments.bam.bai
+	mv ${aligner}_out/igv_s.bam  ${aligner}_out/final.bam
+	mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/final.bam.bai
+
+ ${aligner}_out/genomic.bam :  ${aligner}_out/accepted_hits.bam
+	samtools sort ${aligner}_out/accepted_hits.bam ${aligner}_out/genomic_s
+	samtools index ${aligner}_out/genomic_s.bam
+	mv ${aligner}_out/genomic_s.bam ${aligner}_out/genomic.bam
+	mv ${aligner}_out/genomic_s.bam.bai ${aligner}_out/genomic.bam.bai
 
 rrna.bam : rrna_aligned.sam
 	samtools view -S -b $< >$@
@@ -229,12 +290,18 @@ sample.bam : rrna.bam
 HTML=/var/www/html
 export EXPERIMENT
 
-install-alignments: rrna.bam ${aligner}_out/final_alignments.bam
-	-mkdir -p  $(HTML)/alignments/$${EXPERIMENT%_*}/${EXPERIMENT}
-	cp ${aligner}_out/final_alignments.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${EXPERIMENT}/${EXPERIMENT}.bam
-	cp ${aligner}_out/final_alignments.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${EXPERIMENT}/${EXPERIMENT}.bam.bai
-	cp rrna.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${EXPERIMENT}/rrna_${EXPERIMENT}.bam
-	cp rrna.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${EXPERIMENT}/rrna_${EXPERIMENT}.bam.bai
+install-alignments: rrna.bam sample.bam ${aligner}_out/genomic.bam ${aligner}_out/final.bam
+	-mkdir -p  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}
+	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bam
+	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bai
+	cp ${aligner}_out/genomic.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam
+	cp ${aligner}_out/genomic.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam.bai
+	cp ${aligner}_out/final.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam
+	cp ${aligner}_out/final.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam.bai
+	cp rrna.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam
+	cp rrna.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam.bai
+	cp sample.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam
+	cp sample.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam.bai
 
 rrna_depth.txt: rrna.bam
 	samtools depth rrna.bam | sort -k 3rn >rrna_depth.txt

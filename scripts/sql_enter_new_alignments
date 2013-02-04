@@ -4,7 +4,7 @@
 #
 #  No that won't work because the sam file still has the header on it.
 #
-# Note that this script will NOT work is the <file> is not a text file.
+# Note that this script will NOT work if the <file> is not a text file.
 # e.g. you cannot use this as sql_enter_alignments 061212_A_MM1 /dev/stdin
 # That won't work!   Why?   Because we use the SQL command "LOAD DATA LOCAL INFILE"
 
@@ -83,10 +83,11 @@ CREATE TEMPORARY TABLE tmp_alignments_tbl (
   \`name\` varchar(50) NOT NULL,
   \`dataset_id\` int(4) NOT NULL,
   \`chrom\` varchar(50) NOT NULL,
-  \`strand\` tinyint(1) NOT NULL,
+  \`strand\` char(1) NOT NULL,
   \`position\` int(4) unsigned NOT NULL,
   \`length\` int(4) unsigned NOT NULL,
   \`CIGAR\` varchar(50) NOT NULL,
+  \`XF\` varchar(150) NOT NULL,
 key(name)
 );
 
@@ -97,9 +98,9 @@ key(name)
 select "calling load local infile." as 'Msg';
 LOAD DATA LOCAL INFILE '${file}'
     INTO TABLE tmp_alignments_tbl  
-    (name, @flags, chrom, position, @dummy, CIGAR, @dummy, @dummy, @dummy, @sequence)
+    (name, @flags, chrom, position, @dummy, CIGAR, @dummy, @dummy, @dummy, @sequence,@quality,@XA,@MD,@NM,XF)
     SET dataset_id = @id, 
-        strand = (CASE (@flags & 16) when 16 then FALSE else TRUE END ),
+        strand = (CASE (@flags & 16) when 16 then '-' else '+' END ),
         length = CHAR_LENGTH(@sequence);
 
 
@@ -123,17 +124,17 @@ SELECT DISTINCT name FROM morris.tmp_alignments_tbl;
 ## Delete the old alignments for this dataset.
 ##
 select "deleting old alignments." as 'Msg';
-delete from morris.alignments_tbl where dataset_id=@id;
+delete from morris.new_alignments_tbl where dataset_id=@id;
 
 ## Copy all columns except name from the temporary alignment table,
 ## replacing the name with the unique id from the temporary names
 ## table.
 
 select "inserting new alignments." as 'Msg';
-INSERT INTO morris.alignments_tbl 
-    (dataset_id, read_id, chrom, strand, position, length, CIGAR)
+INSERT INTO morris.new_alignments_tbl 
+    (dataset_id, read_id, chrom, strand, position, length, CIGAR, feature)
     SELECT 
-    a.dataset_id, n.id, a.chrom, a.strand, a.position, a.length, a.CIGAR
+    a.dataset_id, n.id, a.chrom, a.strand, a.position, a.length, a.CIGAR, SUBSTR(a.XF FROM 6)
     FROM tmp_alignments_tbl a 
     INNER JOIN tmp_names_tbl n ON a.name=n.name;
 
