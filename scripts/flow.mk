@@ -106,7 +106,7 @@ ${aligner}_out/accepted_final.sam : ${aligner}_out/accepted_hits.bam
 	#
 	# find overlaps with features.
 	#
-	htseq-count --mode=intersection-strict -o ${aligner}_out/overlaps_exons.sam  ${aligner}_out/tmp.sam \
+	htseq-count --mode=intersection-strict -i transcript_id -o ${aligner}_out/overlaps_exons.sam  ${aligner}_out/tmp.sam \
 			"${REFDIR}/${GENOME}/${GENOME}_refseq_knowngenes.gtf" \
 	| awk '$$2 != 0 ' >${aligner}_out/gene_count.txt
 	#
