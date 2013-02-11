@@ -21,16 +21,10 @@ suppressMessages( library(plotrix) )
 ## the database at UW.
 
 morris.fetchData <- function(datasets, mincount, group=NULL) {
-    drv = dbDriver("MySQL")
-    if (is.null(group)) {
-        message("group is NULL...")
-        con = dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="morrislab.bchem.washington.edu")
-    } else  {
-        message("group is  NOT NULL...")
-        con = dbConnect(drv, group=group)
-    }
-    query <- paste0(
-                    'select name, geneSymbol,\n',
+
+    ## Build an SQL query string for retrieving alignment data from the database.
+    ##
+    dataQuery <- paste0('select name, geneSymbol,\n',
                     paste0("\tt", seq(datasets), ".rawcount",collapse=",\n"),
                     "\nfrom knowngenes_tbl\n",
                     paste0("left outer join ",
@@ -41,18 +35,39 @@ morris.fetchData <- function(datasets, mincount, group=NULL) {
                     paste0(" where ",
                            paste0("t",seq(datasets),".gene_id is not null",collapse=" and ")
                            ))
-    df.data= dbGetQuery(con, query)
-    message(query)
-    
-    ## Get descriptions of the datasets.  These may be used to label axis, etc.
-    ##
-    query <- paste0("select d.name,e.description from experiments_tbl e join datasets_tbl d on d.expr_id=e.id where ",
+
+    ## Build an SQL query sring for retrieving the descriptions of
+    ## experiments from the database.  These are usually used to add
+    ## useful labels to axes on plots.
+    descQuery <- paste0("select d.name,e.description from experiments_tbl e join datasets_tbl d on d.expr_id=e.id where ",
                     paste0("d.name like '", datasets, "'", collapse=" or "))
-    print(query)
-    df.desc <- dbGetQuery(con, query)
-    rownames(df.desc) = df.desc[,1]
-    df.desc <- subset(df.desc, select = -c(name) )
-    
+
+    result = tryCatch({
+        drv = dbDriver("MySQL")
+        if (is.null(group)) {
+            message("group is NULL, using default parameters to connect to database...")
+            con = dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="morrislab.bchem.washington.edu")
+        } else  {
+            message("group is  NOT NULL...")
+            con = dbConnect(drv, group=group)
+        }
+        df.data= dbGetQuery(con, dataQuery)
+
+        df.desc <- dbGetQuery(con, descQuery)
+        rownames(df.desc) = df.desc[,1]
+        df.desc <- subset(df.desc, select = -c(name) )
+    }, warning = function(w) {
+        print(w$message)
+    }, error = function(e) {
+        print(e$message)
+        print(e)
+    }, finally = {
+        if (exists("con")) 
+          dbDisconnect(con)
+        if (exists("drv")) 
+          dbUnloadDriver(drv)
+    })
+
     return ( list(df=df.data, descriptions=df.desc) )
 }
 
@@ -60,7 +75,7 @@ morris.fetchData <- function(datasets, mincount, group=NULL) {
 
 
 ##
-## options - contains the names of two datasets, e.g. c("110112_A_MM1", "110112_B_MM1")
+## datasets - contains the names of two datasets, e.g. c("110112_A_MM1", "110112_B_MM1")
 ##
 ## mincount - the minimum number of reads that a gene expression must possess before it will be counted.
 ##
@@ -70,8 +85,8 @@ morris.fetchData <- function(datasets, mincount, group=NULL) {
 ## are at a remote location and you have set up a tunnel via ssh to
 ## the database at UW.
 
-morris.maplot <- function(options, mincount=25, group=NULL, normalization="quantile") {
-  datalist <- morris.fetchData(options, mincount, group)
+morris.maplot <- function(datasets, mincount=25, group=NULL, normalization="quantile") {
+  datalist <- morris.fetchData(datasets, mincount, group)
   df = datalist$df
   df.desc = datalist$descriptions
   
@@ -82,11 +97,11 @@ morris.maplot <- function(options, mincount=25, group=NULL, normalization="quant
   
   ## normalize to total reads in each experiment.
   if (normalization=="quantile") {
-    x <- normalize.quantiles(data.matrix(df[,1:2]))
+      x <- normalize.quantiles(data.matrix(df[,1:2]))
   } else if (normalization == "scale") {
-    x <- df/colSums(df) 
+      x <- df/colSums(df) 
   } else {
-    stop("Unrecognized 'normalization' value: ", normalization)
+      stop("Unrecognized 'normalization' value: ", normalization)
   }
   
   ## identify the entries with the highest and lowest fold changes
@@ -111,12 +126,12 @@ morris.maplot <- function(options, mincount=25, group=NULL, normalization="quant
   display$lg2B = format(display$lg2B, digits=2, nsmall=2)
   display$diff = format(display$diff, digits=2, nsmall=2)
   
-  title=paste0(options,collapse=" vs. ")
+  title=paste0(datasets,collapse=" vs. ")
   
   ## nf = layout(matrix(c(1,2), 1, 2, byrow = TRUE), widths=c(2,1), heights=c(1,1))
   
   ma.plot( rowMeans(log2(x)), log2(x[, 1])-log2(x[, 2]),
-           xlab="Mean",ylab=paste0(options, collapse=" - "), cex=0.7) 
+           xlab="Mean",ylab=paste0(datasets, collapse=" - "), cex=0.7) 
   textxy(rowMeans(log2(x))[dexpression],(log2(x[, 1])-log2(x[, 2]))[dexpression],genenames[dexpression])
   
   ## plot.new()
