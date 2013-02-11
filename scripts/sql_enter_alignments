@@ -68,8 +68,8 @@ esac
 ## C) make the final table by joining these two tables on name field.
 
 
-## mysql -B morris <<END-SQL
-(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
 
 use morris;
 
