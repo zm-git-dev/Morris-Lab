@@ -19,53 +19,110 @@ suppressMessages( library(plotrix) )
 ## database is accessible on localhost:6607.  Usually this means you
 ## are at a remote location and you have set up a tunnel via ssh to
 ## the database at UW.
-
 morris.fetchData <- function(datasets, mincount, group=NULL) {
+    query=paste0("select feature as name,count(feature) as count from ",
+      "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
+      "where d.name like '", datasets, "%' group by feature")
+
+    drv = dbDriver("MySQL")
+    if (is.null(group)) {
+        message("group is NULL, using default parameters to connect to database...")
+        con = dbConnect(drv, group="remote")
+#         con = dbConnect(drv, user="readonly", password="readonly",
+#           dbname="morris", host="localhost")
+    } else  {
+        message("group is  NOT NULL...")
+        con = dbConnect(drv, group=group)
+    }
+    f = function(q) { dbGetQuery(con, q) }
+    ds = lapply(query, f)
+    df = merge(ds[[1]], ds[[2]], by="name", all=TRUE)
+    head(df[duplicated(df[,1]),])
+    kquery = paste0("select distinct name,name2 from knowngenes2 k ",
+      "join (select genome from experiments_tbl e join datasets_tbl d ",
+      "on d.expr_id=e.id where d.name like '", datasets[1],
+      "%') g on g.genome=k.genome");
+    knowngenes = dbGetQuery(con, kquery) 
+    df.data = merge(df,knowngenes, all.x=TRUE, by="name")[c(1,4,2,3)]
+
+    
+    
+
+    descQuery <- paste0("select d.name,e.description from experiments_tbl e ",
+                        "join datasets_tbl d on d.expr_id=e.id where ",
+                        paste0("d.name like '", datasets, "%'", collapse=" or "))
+    df.desc <- dbGetQuery(con, descQuery)
+    print(df.desc)
+    rownames(df.desc) = df.desc[,1]
+    print(df.desc)
+    df.desc <- subset(df.desc, select = -c(name) )
+    
+    return ( list(df=df.data, descriptions=df.desc) )
+}
+    
+
+morris.oldfetchData <- function(datasets, mincount, group=NULL) {
 
     ## Build an SQL query string for retrieving alignment data from the database.
     ##
-    dataQuery <- paste0('select name, geneSymbol,\n',
-                    paste0("\tt", seq(datasets), ".rawcount",collapse=",\n"),
-                    "\nfrom knowngenes_tbl\n",
-                    paste0("left outer join ",
-                           "(select FPKM, rawcount, gene_id \n",
-                           " from expression_tbl join datasets_tbl ON expression_tbl.dataset_id = datasets_tbl.id \n",
-                           " where datasets_tbl.name like '", datasets, "' and rawcount>", mincount,
-                           " ) t",seq(datasets)," on t",seq(datasets),".gene_id = id\n",collapse="\n"),
-                    paste0(" where ",
-                           paste0("t",seq(datasets),".gene_id is not null",collapse=" and ")
-                           ))
+    # Do an erzats FULL JOIN. of tbl1 and tbl2
+    # Because MySQL does not implement full joins, we have to UNION a LEFT JOIN with a RIGHT JOIN.
 
-    ## Build an SQL query sring for retrieving the descriptions of
+
+    # Need to join this result with the knowngenes2 table....csw 2/19/2013
+
+    dataQuery <- paste0('select  COALESCE(k.name2,a.name) as genename, a.* from (SELECT t1.feature as name, ',
+                        paste0('t', seq(datasets), '.count as c', seq(datasets),collapse=", "), " from\n",
+                        paste0("(select feature,count(feature) as count from new_alignments_tbl a\n",
+                               " join datasets_tbl d on a.dataset_id=d.id\n",
+                               " where d.name like '", datasets,"%' group by feature) t",
+                               seq(datasets), collapse="\nleft outer join \n"),
+                        "\non ", paste0("t", seq(datasets), ".feature", collapse="="),
+                        "\n UNION \n",
+                        "SELECT t2.feature as name, ",
+                        paste0('t', seq(datasets), '.count as c', seq(datasets),collapse=","), " from\n",
+                        paste0("(select feature,count(feature) as count from new_alignments_tbl a\n",
+                               " join datasets_tbl d on a.dataset_id=d.id\n",
+                               " where d.name like '", datasets,"%' group by feature) t",
+                               seq(datasets), collapse="\nright outer join \n"),
+                        " on ", paste0("t", seq(datasets), ".feature", collapse="="),
+                        ") a  left outer join knowngenes2 k on k.name=a.name \n")
+    
+    ## Build an SQL query string for retrieving the descriptions of
     ## experiments from the database.  These are usually used to add
     ## useful labels to axes on plots.
     descQuery <- paste0("select d.name,e.description from experiments_tbl e join datasets_tbl d on d.expr_id=e.id where ",
-                    paste0("d.name like '", datasets, "'", collapse=" or "))
+                    paste0("d.name like '", datasets, "%'", collapse=" or "))
 
     result = tryCatch({
         drv = dbDriver("MySQL")
         if (is.null(group)) {
             message("group is NULL, using default parameters to connect to database...")
-            con = dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="morrislab.bchem.washington.edu")
+            con = dbConnect(drv, user="readonly", password="readonly",
+              		    dbname="morris", host="localhost")
         } else  {
             message("group is  NOT NULL...")
             con = dbConnect(drv, group=group)
         }
-        df.data= dbGetQuery(con, dataQuery)
-
+        cat(dataQuery)
+        df.data = dbGetQuery(con, dataQuery)
+        print(head(df.data))
+        
         df.desc <- dbGetQuery(con, descQuery)
+        print(df.desc)
         rownames(df.desc) = df.desc[,1]
+        print(df.desc)
         df.desc <- subset(df.desc, select = -c(name) )
     }, warning = function(w) {
         print(w$message)
     }, error = function(e) {
         print(e$message)
-        print(e)
+        traceback(2)
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
-        if (exists("drv")) 
-          dbUnloadDriver(drv)
+       ## if (exists("drv")) 
+         ## dbUnloadDriver(drv)
     })
 
     return ( list(df=df.data, descriptions=df.desc) )
@@ -93,11 +150,11 @@ morris.maplot <- function(datasets, mincount=25, group=NULL, normalization="quan
   ## identify each row with the gene name.
   rownames(df) = df[,1]
   genenames = df[,2]
-  df <- subset(df, select = -c(name,geneSymbol) )
+  df <- subset(df, select = -c(name, name2) )
   
   ## normalize to total reads in each experiment.
   if (normalization=="quantile") {
-      x <- normalize.quantiles(data.matrix(df[,1:2]))
+      x <- normalize.quantiles(data.matrix(df[complete.cases(df),]))
   } else if (normalization == "scale") {
       x <- df/colSums(df) 
   } else {

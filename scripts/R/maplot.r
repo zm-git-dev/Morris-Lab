@@ -22,18 +22,14 @@ if (length(opt$args) == 0) {
     message("Type the names of datasets to compare, seperated by spaces")
     datasets = scan(what="list",nlines=1)
 } else {
-    ## otherwise the dataet names were supplied on the commandline.
+    ## otherwise the dataset names were supplied on the commandline.
     datasets = opt$args
 }
 
 print(opt$options$group)
 
-## morris.maplot(c("061212_A_MM1", "061212_B_MM1"), mincount=opt$options$mincount,
-##              normalization="quantile", group="remote")
-
-
 results = morris.maplot(datasets, mincount=opt$options$mincount,
-                        normalization=opt$options$normalization, group=opt$options$group)
+                       normalization=opt$options$normalization, group=opt$options$group)
 print(results, digits=3)
 
 message("Press Return To Continue")
