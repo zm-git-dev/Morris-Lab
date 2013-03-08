@@ -2,6 +2,7 @@
 
 source("morrislib.R")
 library(optparse) 
+library(Cairo)
 
 option_list <- list(
   make_option("--mincount", type="integer", default=25,
@@ -26,11 +27,12 @@ if (length(opt$args) == 0) {
     datasets = opt$args
 }
 
-print(opt$options$group)
-
+Cairo(width = 640, height = 480, file="Rplot.pdf", type="pdf", pointsize=12, 
+      bg = "white", canvas = "white", units = "px", dpi = 72)
 results = morris.maplot(datasets, mincount=opt$options$mincount,
                        normalization=opt$options$normalization, group=opt$options$group)
-print(results, digits=3)
 
-message("Press Return To Continue")
-invisible(readLines(n=1))
+dev.off() 
+print(results, digits=3)
+browseURL("Rplot.pdf")
+
