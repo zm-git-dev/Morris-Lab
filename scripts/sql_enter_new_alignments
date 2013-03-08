@@ -43,8 +43,11 @@ alignment_cmd=""
 
 case "$(file ${file})" in
     *ASCII* )
-	# do nothing special
-         ;;
+	# strip the header from a sam file.
+	alignment_cmd="$(grep @PG ${file} | sed 's/^.*CL://')"
+	sed '/^@/d' ${file} >${tmpfile}
+	file="${tmpfile}"
+        ;;
     *"gzip compressed"* )
         #samtools view ${file} >$tmpfile
 	echo "samtools view -H ${file} | grep @PG | sed 's/^.*CL://'"
@@ -68,8 +71,8 @@ esac
 ## C) make the final table by joining these two tables on name field.
 
 
-## mysql -B morris <<END-SQL
-(tee /dev/stderr | mysql -B morris) <<END-SQL
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
 
 use morris;
 
