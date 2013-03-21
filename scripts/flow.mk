@@ -273,6 +273,9 @@ ${aligner}_out/final.bam: ${aligner}_out/overlaps_exons_uniq.bed
 	mv ${aligner}_out/genomic_s.bam ${aligner}_out/genomic.bam
 	mv ${aligner}_out/genomic_s.bam.bai ${aligner}_out/genomic.bam.bai
 
+# make a bam file of all the reads that aligned to ribosomal RNA so they can be
+# displayed in IGV.  Note this may be too many reads to practically display in IGV.
+# Use sample.bam to choose a random subsample of these reads.
 rrna.bam : rrna_aligned.sam
 	samtools view -S -b $< >$@
 	samtools sort rrna.bam rrna_s
@@ -280,6 +283,9 @@ rrna.bam : rrna_aligned.sam
 	mv rrna_s.bam rrna.bam
 	mv rrna_s.bam.bai rrna.bam.bai
 
+# Choose a random subsample (1/10000) of reads that aligned to
+# ribosomal RNA so they can be displayed in IGV. This is the same data
+# as in rrna.bam, but a smaller sample so IGV can easily handle it.
 sample.bam : rrna.bam
 	samtools view -b -s 0.001 rrna.bam >sample.bam
 	samtools sort sample.bam sample_s
