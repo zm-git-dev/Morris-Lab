@@ -4,7 +4,7 @@ source("morrislib.R")
 library(optparse) 
 
 option_list <- list(
-  make_option("--mincount", type="integer", default=5,
+  make_option("--mincount", type="integer", default=NA,
               help="Minimum number of reads for a gene [default %default]"),
   make_option("--normalization", default="quantile",
               help = "Function to normalize data, \"quantile\" or \"scale\" [default \"%default\"]"),
