@@ -1,6 +1,14 @@
 #!/usr/bin/env Rscript
 
-source("morrislib.R")
+## source a file from wherevere this script was found.
+## http://stackoverflow.com/questions/1815606/rscript-determine-path-of-the-executing-script/1815743
+sourcelocal <- function(fname){
+    argv <- commandArgs(trailingOnly = FALSE)
+    base_dir <- dirname(substring(argv[grep("--file=", argv)], 8))
+    source(paste(base_dir, fname, sep="/"))
+}
+
+sourcelocal("morrislib.R")
 library(optparse) 
 
 option_list <- list(
