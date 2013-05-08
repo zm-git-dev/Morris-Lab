@@ -56,12 +56,12 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
 
 #gene="NR_029560"   # Mir150
 gene="NM_007409"   # ADH1
-gene='NM_016978'	# 'Oat'
-gene='NM_011044'	# 'Pck1'
-gene='NM_144903'	# Aldob
-gene='NM_011434'	# 'Sod1'
-gene='NM_013541'	# 'Gstp1'
 gene='NM_001005419'	# 'Ado'  single exon reverse
+gene='NM_013541'	# 'Gstp1'
+gene='NM_016978'	# 'Oat'
+gene='NM_011434'	# 'Sod1'
+gene='NM_144903'	# Aldob
+gene='NM_011044'	# 'Pck1'
 
 # read all the alignments from 'dataset' that align to 'gene'
 # so these will be multiple alignments, but only those that align to
@@ -73,6 +73,8 @@ df = morris.getalignments("113010_A", gene)
 kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
 rownames(kg) <- kg$name
 
+gobj = kg[gene,]
+
 # Now concentrate on a single gene from these results.
 # Calculate the transcript length of this one  gene
 #
@@ -81,25 +83,34 @@ ends <- as.numeric(strsplit(kg[gene,'exonEnds'],",")[[1]])
 elen <- ends - starts
 transcriptLength = sum(elen)
 
+
 # translate a chromosome position into a transcript position relative to
 # the start of a gene.
-rpos <- function(pos) {
+rpos <- function(gobj, pos) {
     ## Given a position on a chromosome, the position within transcript is
     ## equal to the sum of all exons that end before the
     ## position, PLUS the beginning portion of the exon that contains the position.
+    starts <- as.numeric(strsplit(gobj$exonStarts[[1]],",")[[1]])
+    ends <- as.numeric(strsplit(gobj$exonEnds,",")[[1]])
+    elen <- ends - starts
+    transcriptLength = sum(elen)
 
-    # there are two primary situations:
-    # 1) the position is to the right of the start of the transcript
-    # 2) the position is to the left of the start of the transcript
     positionInTranscript = 0
+    ## there are two primary situations:
+    ## 1) the position is to the right of the start of the transcript
+    ## 2) the position is to the left of the start of the transcript
     if (pos >= starts[1]) {
-        # positioned to the right of the beginning of the gene
+        ## positioned to the right of the beginning of the gene
         if (any(ends<pos)) {
             positionInTranscript = sum( elen[ends<pos] )
         }
         if (any(ends > pos)) {
             positionInTranscript = positionInTranscript + (pos - starts[ends > pos][1] + 1)
         }
+    }
+
+    if (gobj$strand == '-') {
+        positionInTranscript = transcriptLength - positionInTranscript
     }
     return(positionInTranscript)
 }
@@ -108,20 +119,19 @@ rpos <- function(pos) {
 ## For each alignment from 'gene', add a column for transcript length of the gene
 ## and position within that transcript.
 df$transcriptLength = transcriptLength
-df$transcriptPosition = sapply(df$position, rpos)
-print(rpos(kg[gene, 'cdsStart']))
-print(rpos(kg[gene, 'cdsEnd']))
+df$transcriptPosition = sapply(X=df$position, FUN=rpos, gobj=gobj)
+print(rpos(gobj,kg[gene, 'cdsStart']))
+print(rpos(gobj,kg[gene, 'cdsEnd']))
       
-print(rpos(kg[gene, 'txStart']))
-print(rpos(kg[gene, 'txEnd']))
+print(rpos(gobj,kg[gene, 'txStart']))
+print(rpos(gobj,kg[gene, 'txEnd']))
 
 par(.pardefault)
 
 #par(fig=c(0,0.2,0,0.2), new=FALSE)
 plotIDs <- matrix(c(1:4), 4, 1, byrow=T)
 layout(plotIDs, widths = c(1), heights = c(0.5,1,1,0.5))
-layout.show(4)
-par(mai=c(0, 0, 0, 0))
+par(mai=c(0, 0.5, 0, 0))
 frame()  ## skip the top-most frame
 ## draw a histogram in the second frame down.
 
@@ -132,17 +142,22 @@ frame()  ## skip the top-most frame
 #
 histdata = hist(df$transcriptPosition,breaks=transcriptLength/3,plot=F)
 maxy=max(histdata$count[histdata$count != 0])
-maxy = as.integer(round(maxy+50, digits=-2))
+#maxy = as.integer(round(maxy+50, digits=-2))
 par(usr = c(0, transcriptLength, 0, maxy) )
 
 plot(histdata$mid[histdata$count != 0],histdata$count[histdata$count != 0], type='h',
-     xlim=c(0,transcriptLength), ylim=c(0,maxy), axes=F,
-     lwd=3, lend=2,main="",xlab='', ylab='')
+      xlim=c(0,transcriptLength), ylim=c(0,maxy+10), 
+      lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n')
 
-# create an axis on the left side with four tick marks that fall on 100-unit
-# boundaries.
-# Probably have to revisit this when graphing low expression genes.
-#axis(2, at=seq(0,maxy,as.integer(round(ceiling(maxy/4), digits=-2))), pos=0)
+
+## plot(histdata$mid[histdata$count != 0],histdata$count[histdata$count != 0], type='h',
+##      xlim=c(0,transcriptLength), ylim=c(0,maxy), axes=F,
+##      lwd=3, lend=2,main="",xlab='', ylab='')
+
+## # create an axis on the left side with four tick marks that fall on 100-unit
+## # boundaries.
+## # Probably have to revisit this when graphing low expression genes.
+## axis(2, at=seq(0,maxy,as.integer(round(ceiling(maxy/4), digits=-2))), pos=0)
 
 
 # Put the total number of reads in the upper-right corner of the histogram.
@@ -159,11 +174,11 @@ if (cdsLength > 0) {
     ## Label the endpoints of the coding region and place the gene
     ## name in the middle of the coding region.
     
-    rect(rpos(kg[gene, 'cdsStart']), 100-2*cdsHeight, rpos(kg[gene, 'cdsEnd']), 100, col='blue')
-    text((rpos(kg[gene, 'cdsStart']) + rpos(kg[gene, 'cdsEnd']))/2, 100-2*cdsHeight-5,
+    rect(rpos(gobj, kg[gene, 'cdsStart']), 100-2*cdsHeight, rpos(gobj, kg[gene, 'cdsEnd']), 100, col='blue')
+    text((rpos(gobj, kg[gene, 'cdsStart']) + rpos(gobj, kg[gene, 'cdsEnd']))/2, 100-2*cdsHeight-5,
          adj=c(.5,0.5), kg[gene, 'name2'])
-    text(rpos(kg[gene, 'cdsStart']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(kg[gene, 'cdsStart'])))
-    text(rpos(kg[gene, 'cdsEnd']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(kg[gene, 'cdsEnd'])))
+    text(rpos(gobj,kg[gene, 'cdsStart']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(gobj,kg[gene, 'cdsStart'])))
+    text(rpos(gobj,kg[gene, 'cdsEnd']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(gobj,kg[gene, 'cdsEnd'])))
 } else {
     ## There is no coding region - this is a non-coding gene.
     ## Label the endpoints of the transcript and label the gene in the middle.

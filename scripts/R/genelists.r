@@ -14,7 +14,7 @@ library(optparse)
 option_list <- list(
   make_option("--mincount", type="integer", default=NA,
               help="Minimum number of reads for a gene [default %default]"),
-  make_option("--normalization", default="quantile",
+  make_option("--normalization", default=NULL,
               help = "Function to normalize data, \"quantile\" or \"scale\" [default \"%default\"]"),
   make_option("--group", default=NULL,
               help="Database access group, usually \"morrisdata\" or \"remote\" [default %default]"),
@@ -41,7 +41,44 @@ if (opt$options$list) {
         datasets = opt$args
     }
 
-    results = morris.genecounts(datasets, mincount=opt$options$mincount,
-      group=opt$options$group)
-    print(results, digits=3)
+    group=opt$options$group
+    normalization=opt$options$normalization
+    mincount = opt$options$mincount
+    
+    df = morris.genecounts(datasets, group=group)
+
+    ## Identify entries that do not have proper read depth, but don't
+    ## eliminate them yet.  Some normalization methods rely upon
+    ## having the full dataset available, even if only a portion of
+    ## the dataset will eventually be reported.
+    ##
+    row.sub = NA
+    if (!is.na(mincount)) 
+      row.sub = apply(df, 1, function(row) (all(!is.na(row)) && all(row >= mincount)))
+
+    if (!is.null(opt$options$normalization)) {
+        x <- morris.normalize(df, normalization=normalization, group=group)
+    
+
+        ## merge the raw and normalized values into a single dataframe
+        df <- merge(df, x, by=0,
+                    suffixes=c("", paste0(".", normalization)), all=TRUE)
+        rownames(df) <- df$Row.names
+        df <- subset(df, select=-c(Row.names) )
+    }
+
+    if (!is.na(row.sub))
+      df <- df[row.sub,, drop=FALSE]
+    
+    ## add common names for the refseq genes.
+    df$common <- morris.commonnames(rownames(df), group=group)
+
+    ## rearrange the columns to move the last column (common name) to the second column
+    ## this is a little tricky b/c number of cols in df is variable.
+    df <- df[c(ncol(df), 1:(ncol(df)-1))]
+
+
+
+    options("scipen"=100, "digits"=4)
+    print(df)
 }
