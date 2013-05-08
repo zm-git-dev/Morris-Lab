@@ -24,7 +24,9 @@ option_list <- list(
   make_option("--report", type="integer", default=5,
               help="Report and label the N-most differentially expressed genes [default %default]"),
   make_option("--list", action="store_true", default=FALSE,
-              help="Show the names of available datasets and exit.")
+              help="Show the names of available datasets and exit."),
+  make_option("--log", action="store_true", default=FALSE,
+              help="Set x&y axis to log scale")
 )
 
 # get command line options, if help option encountered print help and exit,
@@ -53,7 +55,7 @@ if (opt$options$list) {
 
     results = morris.scatter(datasets, mincount=opt$options$mincount,
       normalization=opt$options$normalization, group=opt$options$group,
-      genes=genes[[1]], report=opt$options$report)
+      genes=genes[[1]], report=opt$options$report, logscale=opt$options$log)
     dev.off() 
     print(results, digits=3)
     browseURL("Rplot.pdf")
