@@ -53,6 +53,95 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
     return(df)
 }
 
+## This awesome flavor of OOP in R using closures is taken from a
+## stackoverflow posting I stumbled across:
+## http://stackoverflow.com/a/15245568/1135316
+##
+transcript = function(gdata) {
+    starts <- as.numeric(strsplit(gdata$exonStarts,",")[[1]])
+    ends <- as.numeric(strsplit(gdata$exonEnds,",")[[1]])
+    elen <- ends - starts
+    transcriptLength <- sum(elen)
+
+    length = function() transcriptLength
+    cdsLength = function() cdsEnd()-cdsStart()
+    cdsStart = function() rpos(gdata$cdsStart)
+    cdsEnd = function() rpos(gdata$cdsEnd)
+    txStart = function() rpos(gdata$txStart)
+    txEnd = function() rpos(gdata$txEnd)
+    isCoding = function() (gdata$cdsEnd != gdata$cdsStart)
+    name = function() (gdata$name)
+    name2 = function() (gdata$name2)
+    rpos = function(pos) {
+        ## Given a position on a chromosome, the position within transcript is
+        ## equal to the sum of all exons that end before the
+        ## position, PLUS the beginning portion of the exon that contains the position.
+
+        positionInTranscript = 0
+        ## there are two primary situations:
+        ## 1) the position is to the right of the start of the transcript
+        ## 2) the position is to the left of the start of the transcript
+        if (pos >= starts[1]) {
+            ## positioned to the right of the beginning of the gene
+            if (any(ends<pos)) {
+                positionInTranscript = sum( elen[ends<pos] )
+            }
+            if (any(ends > pos)) {
+                positionInTranscript = positionInTranscript + (pos - starts[ends > pos][1] + 1)
+            }
+        }
+        
+        if (gdata$strand == '-') {
+            positionInTranscript = transcriptLength - positionInTranscript
+        }
+        return(positionInTranscript)
+    }
+    
+    exported = list(
+      length=length,
+      cdsLength=cdsLength,
+      cdsStart=cdsStart,
+      cdsEnd=cdsEnd,
+      txStart=txStart,
+      txEnd=txEnd,
+      isCoding=isCoding,
+      name=name,
+      name2=name2,
+      rpos=rpos
+      )
+    class(exported) <- "transcript"
+    return(exported)
+}
+
+print.transcript <- function(object) {
+    cat("transcript ", object$name2(), ", ", object$length(), "\n")
+}
+
+plot.transcript <- function(obj) {
+    ## draw the transcript in the third frame down.
+    plot(c(0,  obj$length()), c(0,100), type="n", axes=F, xlab='', ylab='', bty="n", new=T)
+
+    cdsHeight = 5   # height of coding region, expressed as percentage of plot height
+    segments(0, 100-cdsHeight,  obj$length(),  100-cdsHeight, lwd=5, lend=2)
+    if (obj$isCoding()) {
+        ## Label the endpoints of the coding region and place the gene
+        ## name in the middle of the coding region.
+    
+        rect(obj$cdsStart(), 100-2*cdsHeight, obj$cdsEnd(), 100, col='blue')
+        text((obj$cdsStart() + obj$cdsEnd())/2, 100-2*cdsHeight-5,
+             adj=c(.5,0.5), obj$name2())
+        text(obj$cdsStart(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(obj$cdsStart()))
+        text(obj$cdsEnd(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(obj$cdsEnd()))
+    } else {
+        ## There is no coding region - this is a non-coding gene.
+        ## Label the endpoints of the transcript and label the gene in the middle.
+        text( obj$length()/2, 100-2*cdsHeight-5,
+             adj=c(.5,0.5), obj$name2())
+        text(0, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(0))
+        text( obj$length(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character( obj$length() ))
+    }
+}
+
 
 #gene="NR_029560"   # Mir150
 gene="NM_007409"   # ADH1
@@ -73,58 +162,10 @@ df = morris.getalignments("113010_A", gene)
 kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
 rownames(kg) <- kg$name
 
-gobj = kg[gene,]
+gobj = transcript(kg[gene,])
 
-# Now concentrate on a single gene from these results.
-# Calculate the transcript length of this one  gene
-#
-starts <- as.numeric(strsplit(kg[gene,'exonStarts'],",")[[1]])
-ends <- as.numeric(strsplit(kg[gene,'exonEnds'],",")[[1]])
-elen <- ends - starts
-transcriptLength = sum(elen)
-
-
-# translate a chromosome position into a transcript position relative to
-# the start of a gene.
-rpos <- function(gobj, pos) {
-    ## Given a position on a chromosome, the position within transcript is
-    ## equal to the sum of all exons that end before the
-    ## position, PLUS the beginning portion of the exon that contains the position.
-    starts <- as.numeric(strsplit(gobj$exonStarts[[1]],",")[[1]])
-    ends <- as.numeric(strsplit(gobj$exonEnds,",")[[1]])
-    elen <- ends - starts
-    transcriptLength = sum(elen)
-
-    positionInTranscript = 0
-    ## there are two primary situations:
-    ## 1) the position is to the right of the start of the transcript
-    ## 2) the position is to the left of the start of the transcript
-    if (pos >= starts[1]) {
-        ## positioned to the right of the beginning of the gene
-        if (any(ends<pos)) {
-            positionInTranscript = sum( elen[ends<pos] )
-        }
-        if (any(ends > pos)) {
-            positionInTranscript = positionInTranscript + (pos - starts[ends > pos][1] + 1)
-        }
-    }
-
-    if (gobj$strand == '-') {
-        positionInTranscript = transcriptLength - positionInTranscript
-    }
-    return(positionInTranscript)
-}
-
-
-## For each alignment from 'gene', add a column for transcript length of the gene
-## and position within that transcript.
-df$transcriptLength = transcriptLength
-df$transcriptPosition = sapply(X=df$position, FUN=rpos, gobj=gobj)
-print(rpos(gobj,kg[gene, 'cdsStart']))
-print(rpos(gobj,kg[gene, 'cdsEnd']))
-      
-print(rpos(gobj,kg[gene, 'txStart']))
-print(rpos(gobj,kg[gene, 'txEnd']))
+## For each alignment from 'gene', add a column for position within that transcript.
+df$transcriptPosition = sapply(X=df$position, FUN=gobj$rpos)
 
 par(.pardefault)
 
@@ -135,55 +176,20 @@ par(mai=c(0, 0.5, 0, 0))
 frame()  ## skip the top-most frame
 ## draw a histogram in the second frame down.
 
-# Calculate the histogram bins and maximum count across all bins.
-# Set the user coordinates accordingly so the axis will have tick marks in
-# a pleasing increment (rounded to hundreds)
-# Setting up the axis was determined by lots of trial-and-error.
-#
-histdata = hist(df$transcriptPosition,breaks=transcriptLength/3,plot=F)
+## Calculate the histogram bins and maximum count across all bins.
+##
+histdata = hist(df$transcriptPosition,breaks= gobj$length()/3,plot=F)
 maxy=max(histdata$count[histdata$count != 0])
-#maxy = as.integer(round(maxy+50, digits=-2))
-par(usr = c(0, transcriptLength, 0, maxy) )
+par(usr = c(0,  gobj$length(), 0, maxy) )
 
 plot(histdata$mid[histdata$count != 0],histdata$count[histdata$count != 0], type='h',
-      xlim=c(0,transcriptLength), ylim=c(0,maxy+10), 
+      xlim=c(0, gobj$length()), ylim=c(0,maxy+10), 
       lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n')
-
-
-## plot(histdata$mid[histdata$count != 0],histdata$count[histdata$count != 0], type='h',
-##      xlim=c(0,transcriptLength), ylim=c(0,maxy), axes=F,
-##      lwd=3, lend=2,main="",xlab='', ylab='')
-
-## # create an axis on the left side with four tick marks that fall on 100-unit
-## # boundaries.
-## # Probably have to revisit this when graphing low expression genes.
-## axis(2, at=seq(0,maxy,as.integer(round(ceiling(maxy/4), digits=-2))), pos=0)
 
 
 # Put the total number of reads in the upper-right corner of the histogram.
 usr <- par( "usr" )
 text( usr[ 2 ], usr[ 4 ], paste0(nrow(df), " total reads"),    adj = c( 1.2, 5 ))
  
-## draw the transcript in the third frame down.
-plot(c(0, transcriptLength), c(0,100), type="n", axes=F, xlab='', ylab='', bty="n", new=T)
+plot(gobj)
 
-cdsLength = kg[gene, 'cdsEnd']-kg[gene, 'cdsStart']
-cdsHeight = 5   # height of coding region, expressed as percentage of plot height
-segments(0, 100-cdsHeight, transcriptLength,  100-cdsHeight, lwd=5, lend=2)
-if (cdsLength > 0) {
-    ## Label the endpoints of the coding region and place the gene
-    ## name in the middle of the coding region.
-    
-    rect(rpos(gobj, kg[gene, 'cdsStart']), 100-2*cdsHeight, rpos(gobj, kg[gene, 'cdsEnd']), 100, col='blue')
-    text((rpos(gobj, kg[gene, 'cdsStart']) + rpos(gobj, kg[gene, 'cdsEnd']))/2, 100-2*cdsHeight-5,
-         adj=c(.5,0.5), kg[gene, 'name2'])
-    text(rpos(gobj,kg[gene, 'cdsStart']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(gobj,kg[gene, 'cdsStart'])))
-    text(rpos(gobj,kg[gene, 'cdsEnd']), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(rpos(gobj,kg[gene, 'cdsEnd'])))
-} else {
-    ## There is no coding region - this is a non-coding gene.
-    ## Label the endpoints of the transcript and label the gene in the middle.
-    text(transcriptLength/2, 100-2*cdsHeight-5,
-         adj=c(.5,0.5), kg[gene, 'name2'])
-    text(0, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(0))
-    text(transcriptLength, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(transcriptLength))
-}
