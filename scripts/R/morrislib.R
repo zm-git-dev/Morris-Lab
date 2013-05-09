@@ -20,16 +20,6 @@ suppressMessages( library(plotrix) )
 ## are at a remote location and you have set up a tunnel via ssh to
 ## the database at UW.
 morris.fetchData <- function(datasets, group=NULL) {
-    # SQL query for retrieving the knowngene list.  The proper genome is selected from
-    # the first dataset.
-    kquery <- paste0("select distinct name,name2 as gene from knowngenes2 k ",
-                     "join (select genome from experiments_tbl e join datasets_tbl d ",
-                     "on d.expr_id=e.id where d.name like '", datasets[1],
-                     "%') g on g.genome=k.genome");
-
-    # SQL query for retrieving the set of datasets with alignments.
-    dsquery <- paste0("select d.name from (SELECT dataset_id FROM morris.new_alignments_tbl ",
-                      "group by dataset_id) a join datasets_tbl d on d.id=a.dataset_id;")
 
     result <- tryCatch({
         drv <- dbDriver("MySQL")
@@ -43,8 +33,47 @@ morris.fetchData <- function(datasets, group=NULL) {
             stop(paste0("Could not connect to database: ", e$message));
         }
 
+        getGenome <- function(dataset) {
+            ## SQL query for retrieving the per-gene alignment coun of a single dataset.
+            ## These individual tables will be joined together based on the gene name
+            ## as a common key.   Oddly eough it is faster to do this in R than it is
+            ## in SQL.
+            query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
+                     "where d.name like '", dataset, "%'")
+            df <- dbGetQuery(con, query)
+            if (nrow(df) == 0) {
+                print(paste0("Error during database query: no dataset named '", dataset,"'"))
+                print("Available datasets:")
+                print(morris.datasets(group))
+                stop("No Data")
+            }
+            return(df)
+        }
+
+        ## retrieve the genome name for each experiment listed in datasets.
+        gs <- lapply(datasets, getGenome)
+        gf = Reduce(function(...) merge(..., all=T, suffixes=c("", ".2")), gs)
+
+        ## check to see that each experiment has the same genome!
+        ## ( it won't be useful to compare datasets aligned with different genomes. )
+        ##
+        if (nrow(unique(t(gf[1,]))) != 1) {
+            print(paste0("Error during database query: not all selected datasets align to the same genome"))
+            print("Selected genomes:")
+            print(gs)
+            stop("No Data")
+        }
+
+        ## If we get here we know all datasets used the same genome so just pick the first one.
+        ## This genome will be added as an attribute of the dataframe returns from this function.
+        ## (useful when retrieving a set of knowngenes to go with this dataframe.)
+        genome=gf[1,1]
+        
         f <- function(dataset) {
-            # SQL query for retrieving the the alignment data of a single dataset.
+            ## SQL query for retrieving the per-gene alignment coun of a single dataset.
+            ## These individual tables will be joined together based on the gene name
+            ## as a common key.   Oddly eough it is faster to do this in R than it is
+            ## in SQL.
             query <- paste0("select feature as name,count(feature) as '", dataset, "' from ",
                             "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
                             "where d.name like '", dataset, "%' group by feature")
@@ -52,8 +81,8 @@ morris.fetchData <- function(datasets, group=NULL) {
             if (nrow(df) == 0) {
                 print(paste0("Error during database query: no data in dataset '", dataset,"'"))
                 print("Available datasets:")
-                print(morris.datasets(group));
-                stop("No Data");
+                print(morris.datasets(group))
+                stop("No Data")
             }
             return(df)
         }
@@ -69,27 +98,11 @@ morris.fetchData <- function(datasets, group=NULL) {
         ## 
         df = Reduce(function(...) merge(...,all=T, by="name", suffixes=c("", ".2")), ds)
 
+        attr(df, "genome") <- genome
+        
         # assert that there are no duplicate gene names in the list.
         stopifnot(nrow(df[duplicated(df[,1]),]) == 0)
 
-        ## retrieve the knowngene database so we can give common names to the
-        ## refseq names used to label each row in our data.
-        ## Refseq names have the advantage of being unique, but they are not memorable.
-        ##
-        knowngenes <- dbGetQuery(con, kquery)
-
-        # join the knowngene list with our sample data using the refseq gene name column.
-        # keep just the refseq name, the cmmon gene name, and the two columns of count data.
-        df <- merge(df,knowngenes, all.x=TRUE, by="name")
-        
-        ## rearrange the columns to move the last column (common name) to the second column
-        ## this is a little tricky b/c number of cols in df is variable.
-        df = df[c(1, ncol(df),2:(ncol(df)-1))]
-
-        # Some refseq names don't have corresponding common names.
-        # For those, reuse the refeseq names as the common name.
-        df[is.na(df[,2]),2] <- df[is.na(df[,2]),1]
-        
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
@@ -100,6 +113,23 @@ morris.fetchData <- function(datasets, group=NULL) {
     return (df)
 }
 
+morris.commonnames <- function(refseq, genome, group=NULL) {
+    ## retrieve the knowngene database so we can give common names to the
+    ## refseq names used to label each row in our data.
+    ## Refseq names have the advantage of being unique, but they are not memorable.
+    ##
+    kg <- morris.getknowngenes(genome, group=group)
+
+    ## match the refseq names with the common names, using the refseq names as a key
+    tmp = kg$name2[match(refseq, kg$name)]
+
+    ## Some refseq names don't have corresponding common names.
+    ## For those, reuse the refeseq names as the common name.
+    tmp[is.na(tmp)] = refseq[is.na(tmp)]
+
+    return (tmp)
+
+}
 
 ## fetch descriptions of datasets from the mysql dtabase.
 ##
@@ -145,13 +175,9 @@ morris.fetchdesc <- function(datasets, group=NULL) {
 
 morris.maplot <- function(datasets, mincount=25, group=NULL, normalization="quantile",
                           genes=NULL, report=5) {
-    df = morris.genecounts(datasets, mincount=mincount, group=group)
+    df = morris.genecounts(datasets, mincount=mincount, normalization=normalization, group=group)
 
-    ## normalize to total reads in each experiment.
-    normalization <- match.arg(normalization)
-    x<- switch(normalization,
-               scaled = df[2:ncol(df)]/colSums(df[2:ncol(df)]),
-               quantile = data.frame(normalize.quantiles(data.matrix(df[2:ncol(df)]))))
+    x <- df[(ncol(df)-1):ncol(df)]
 
     ## identify the entries with the highest and lowest fold changes
     dexpression <- order(x[,2]-x[,1])[1:report]
@@ -190,38 +216,33 @@ morris.maplot <- function(datasets, mincount=25, group=NULL, normalization="quan
 ##
 ## mincount - filter out genes if any dataset has fewer then mincount raw reads before scaling.
 ##
-## normlization - the type of nomalization to apply.
+## normalization - the type of nomalization to apply.
 ##
 ## report - this many over/under expressed genes.
 ##
 ## genes - extra genes to highlight, in addition to the top over/under expressed, e.g. c("Pbsn", "Sbp")
 ##
 morris.scatter <- function(datasets, mincount=25, group=NULL,
-                           normalization=c("rpm", "scaled", "quantile"),
+                           normalization="rpkm",
                            genes=NULL, report=5, logscale=FALSE) {
-    df = morris.genecounts(datasets, mincount=mincount, group=group)
 
-    ## normalize to total reads in each experiment.
-    normalization <- match.arg(normalization)
-    x<- switch(normalization,
-               rpm = df[2:ncol(df)]/(colSums(df[2:ncol(df)]/(10^6))),
-               scaled = df[2:ncol(df)]/colSums(df[2:ncol(df)]),
-               quantile = data.frame(normalize.quantiles(data.matrix(df[2:ncol(df)]))))
+    df = morris.genecounts(datasets, group=group)
 
-    ## identify the entries with the highest and lowest fold changes
-    dexpression <- order(x[,2]-x[,1])[1:report]
-    dexpression <- append(dexpression, order(x[,1]-x[,2])[1:report])
-    dexpression <- append(dexpression, match(genes, df[,1]))
+    ## normalize the data
+    x = morris.normalize(df, normalization, group)
+
+    ## identify entries that do not have proper read depth
+    ## and remove them.
+    row.sub = apply(df, 1, function(row) (all(!is.na(row)) && all(row >= mincount)))
+    x <- x[row.sub,]
+    df <- df[row.sub,]
     
-  
-    results <- data.frame(gene=df[dexpression,1],
-                          rawA=df[dexpression,2],
-                          rawB=df[dexpression,3],
-                          normA=x[dexpression,1],
-                          normB=x[dexpression,2],
-                          diff=(x[,2]-x[,1])[dexpression])
-    rownames(results) <- rownames(df)[dexpression]
-    results <- results[order(-results$diff),]
+    ## add common names for the refseq genes.
+    df$common <- morris.commonnames(rownames(df), attr(df, "genome"), group=group)
+
+    ## rearrange the columns to move the last column (common name) to the second column
+    ## this is a little tricky b/c number of cols in df is variable.
+    df <- df[c(ncol(df), 1:(ncol(df)-1))]
 
     ## nf <- layout(matrix(c(1,2), 1, 2, byrow <- TRUE), widths=c(2,1), heights=c(1,1))
     descriptions = morris.fetchdesc(datasets, group=group)
@@ -236,11 +257,28 @@ morris.scatter <- function(datasets, mincount=25, group=NULL,
         plot( x[,1], x[,2], cex=.5,
              xlab=descriptions[datasets[1],1],
              ylab=descriptions[datasets[2],1])
-        abline(lm(x[,2]~0+x[,1]), col="red")
+        abline(lm(x[,2]~0+x[,1]), col="blue")
     }
     title(paste0(descriptions[,1]," (",rownames(descriptions),")",
-                 collapse="\n vs. "))
-    text(x[dexpression,],  df[dexpression,'gene'], adj=c(-0, -0.3), cex=.7, col="red")
+                 collapse="\n vs. "), cex=.7)
+
+    ## Prepare a dataframe with information about the most differentially
+    ## expressed points.
+    dexpression <- order(x[,2]-x[,1])[1:report]
+    dexpression <- append(dexpression, order(x[,1]-x[,2])[1:report])
+    dexpression <- append(dexpression, match(genes, df[,1]))
+  
+    results <- data.frame(gene=df[dexpression,1],
+                          rawA=df[dexpression,2],
+                          rawB=df[dexpression,3],
+                          normA=x[dexpression,1],
+                          normB=x[dexpression,2],
+                          diff=(x[,2]-x[,1])[dexpression])
+    rownames(results) <- rownames(df[dexpression,])
+    results <- results[order(-results$diff),]
+
+    ## label the most differentialy expressed points.
+    text(x[dexpression,],  df[dexpression,'common'], adj=c(-0, -0.3), cex=.7, col="red")
 
     return (results)
 }
@@ -292,19 +330,104 @@ morris.datasets <- function(group=NULL) {
 }
 
 
-morris.genecounts <- function(datasets, mincount=NA, group=NULL,
-                           normalization= c( "scaled", "quantile")) {
+morris.genecounts <- function(datasets, group=NULL) {
     df <- morris.fetchData(datasets, group)
     rownames(df) <- df[,1]
     df <- subset(df, select=-c(name) )
-
-    if (!is.na(mincount)) {
-        ## Filter NA values seperately because comparison operators don't work on NA.
-        ## (NA > anything is always NA).
-        df <- df[complete.cases(df[,2:ncol(df)]),]
-        
-        ## Filter out rows that contain any raw read count less than 'mincount' for any experiment.
-        df = df[rowSums(df[,2:ncol(df)] >= mincount) == ncol(df)-1,]
-    }
     return(df)
 }
+
+
+## Retrieve the list of known refseq genes from the database.
+##
+morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
+
+    # SQL query for retrieving the knowngene list.  The proper genome is selected from
+    # the first dataset.
+    kquery <- paste0("select * from knowngenes2 k ",
+                     "where k.genome=\"", genome, "\"");
+    if (!is.null(gene)) {
+        kquery <- paste0(kquery, " and name in (", paste0("'",gene,"'", collapse=","), ")")
+    }
+
+    result <- tryCatch({
+        drv <- dbDriver("MySQL")
+        if (is.null(group)) {
+            con <- dbConnect(drv, group="remote")
+            # con <- dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="localhost")
+        } else  {
+            con <- dbConnect(drv, group=group)
+        }
+        if (is.null(con)) {
+            stop(paste0("Could not connect to database: ", e$message));
+        }
+
+
+        ## retrieve the knowngene database.
+        ## Calculate the length of exonic sequence
+        ##
+        kg <- dbGetQuery(con, kquery)
+        kg <- kg[!duplicated(kg$name),]
+        fun <- function(x,y) {sum(as.numeric(y)-as.numeric(x))}
+        kg$exonLen <- mapply(fun, strsplit(kg$exonStarts,","), strsplit(kg$exonEnds,","))
+
+    }, finally = {
+        if (exists("con")) 
+          dbDisconnect(con)
+        ##if (exists("drv")) 
+        ##  dbUnloadDriver(drv)
+    })
+    return(kg)
+}
+
+
+
+morris.normalize <- function(df, 
+                             normalization=c("rpm", "scaled", "quantile", "rpkm"),
+                             group=NULL) {
+    
+    ## normalize to total reads in each experiment.
+    normalization <- match.arg(normalization)
+    df.cols <- sapply(df, is.numeric)  #select numeric variables
+    if (normalization == "rpkm") {
+
+        ## FPKM = 10e9 * C / (N * L)
+        ## C = # mapped reads that fell into exons of a particular gene
+        ## N = total mapped reads for this experiment
+        ## L = exonic base pairs in this gene
+        ## http://www.biostars.org/p/11378/
+        ## http://www.biostars.org/p/6694/
+        ##
+        kg <- morris.getknowngenes(attr(df, "genome"), group=group)
+        N <- colSums(df[df.cols], na.rm = TRUE)
+        L <- kg[match(rownames(df),kg$name),"exonLen"]
+        C <- df[df.cols]
+
+        ## sapply gives a matrix.
+        ## lapply would return a list of lists (not useful here)
+        tmp <- sapply(N,function(n) {return(n*L)})
+        tmp <- (10^9)/tmp
+        x <- C*tmp
+        
+    } else if (normalization == "rpm") {
+        N <- colSums(df[df.cols], na.rm = TRUE)
+        C <- df[df.cols]
+        
+        x <- C/(N/(10^6))
+      
+    } else if (normalization == "scaled") {
+        N <- colSums(df[df.cols], na.rm = TRUE)
+        C <- df[df.cols]
+
+        x <- C/N
+
+    } else if (normalization == "quantile") {
+        
+        x <- data.frame(normalize.quantiles(data.matrix(df[df.cols])))
+        names(x) <- datasets
+        rownames(x) <- rownames(df)
+    
+    }
+    return(x)
+}
+
