@@ -1,5 +1,5 @@
 
-library(grid)
+##library(grid)
 
 
 morris.getalignments <- function(dataset, gene, group=NULL) {
@@ -77,26 +77,43 @@ transcript = function(gdata) {
         ## equal to the sum of all exons that end before the
         ## position, PLUS the beginning portion of the exon that contains the position.
 
-        positionInTranscript = 0
-        ## there are two primary situations:
-        ## 1) the position is to the right of the start of the transcript
-        ## 2) the position is to the left of the start of the transcript
-        if (pos >= starts[1]) {
-            ## positioned to the right of the beginning of the gene
-            if (any(ends<pos)) {
-                positionInTranscript = sum( elen[ends<pos] )
-            }
-            if (any(ends > pos)) {
-                positionInTranscript = positionInTranscript + (pos - starts[ends > pos][1] + 1)
+        offset = 0
+        if (gdata$strand == '+') {
+            ## there are two primary situations:
+            ## 1) the position is to the right of the start of the transcript
+            ## 2) the position is to the left of the start of the transcript
+            if (pos >= starts[1]) {
+                ## positioned to the right of the beginning of the gene
+                if (any(ends<pos)) {
+                    offset = sum( elen[ends<pos] )
+                }
+                if (any(ends > pos)) {
+                    offset = offset +  (pos - starts[ends > pos][1] + 1)
+                } else {
+                    offset = offset + (pos - tail(ends,1)[[1]] + 1)
+                }
             } else {
-                positionInTranscript = positionInTranscript + (pos - tail(ends,1))
+                offset = pos-starts[1]
+            }
+        } else {
+            if (pos < tail(ends,1)) {
+                if (any(starts > pos)) {
+                    offset = sum( elen[starts>pos] )
+                }
+                if (any(starts < pos)) {
+                    offset = offset + (tail(ends[starts<pos],1) - pos + 1)
+                } else {
+                    offset = offset + (starts[1] - pos)
+                }
+            } else {
+                offset = pos - tail(ends,1)
             }
         }
         
-        if (gdata$strand == '-') {
-            positionInTranscript = transcriptLength - positionInTranscript
-        }
-        return(positionInTranscript)
+        ## if (gdata$strand == '-') {
+        ##     positionInTranscript = transcriptLength - positionInTranscript + 1
+        ## }
+        return(offset)
     }
     
     exported = list(
@@ -122,49 +139,71 @@ print.transcript <- function(object) {
 plot.transcript <- function(self, xlim=NULL) {
     if (is.null(xlim))
       xlim <- c(1, self$length())
-    clip(xlim[1], xlim[2], 0, 100)
 
-    cdsHeight = 5   # height of coding region, expressed as percentage of plot height
-    segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
+    cdsHeight = 10   # height of coding region, expressed as percentage of plot height
     if (self$isCoding()) {
         ## Label the endpoints of the coding region and place the gene
         ## name in the middle of the coding region.
-
+        cdslim = c(max(xlim[1], self$cdsStart()), min(xlim[2], self$cdsEnd()))
+        text((cdslim[1] + cdslim[2])/2, 100-2*cdsHeight-5,
+             adj=c(.5,1.0), self$name2())
+        text(cdslim[1], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(cdslim[1]))
+        text(cdslim[2], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(cdslim[2]))
+        clip(xlim[1], xlim[2], 0, 100)
+        segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
         rect(self$cdsStart(), 100-2*cdsHeight, self$cdsEnd(), 100, col='blue')
-        text((self$cdsStart() + self$cdsEnd())/2, 100-2*cdsHeight-5,
-             adj=c(.5,0.5), self$name2())
-        text(self$cdsStart(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(self$cdsStart()))
-        text(self$cdsEnd(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(self$cdsEnd()))
     } else {
         ## There is no coding region - this is a non-coding gene.
         ## Label the endpoints of the transcript and label the gene in the middle.
-        text( self$length()/2, 100-2*cdsHeight-5,
-             adj=c(.5,0.5), self$name2())
-        text(1, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(0))
-        text(self$length(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character( self$length() ))
+        text((xlim[1]+xlim[2])/2, 100-2*cdsHeight-5,
+             adj=c(.5,1.0), self$name2())
+        text(xlim[1], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(xlim[1]))
+        text(xlim[2], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(xlim[2]))
+        clip(xlim[1], xlim[2], 0, 100)
+        segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
     }
 }
 
-profile <- function(df, transcript, xlim=NULL) {
-    usr = par("usr")
+profile <- function(df, transcript, xlim=NULL, bias="start", minlen=NULL) {
+    usr = par()$usr
+    plt = par()$plt
+
     
     ## Calculate the relative position of each alignment w.r.t. start of transcript.
-    positions = sapply(X=df$position, FUN=transcript$rpos)
+    ## position may be calculated with respect to the middle of the read or
+    ## the 5'-end
+    if (bias == "middle") {
+        x = sapply(X=df$position+df$length/2.0, FUN=transcript$rpos)
+    } else {
+        x = sapply(X=df$position, FUN=transcript$rpos)
+    }
+    ## if the user specified a minimum read length, discard shorter reads.
+    if (!is.null(minlen))
+        x = x[df$len >= minlen]
 
-    ## save the graphical environent.
-    plt <- par("plt")
-
-    ## prepare the graph the histogram in the top half of the figure.
-    par(plt=c(plt[1], plt[2], .5, 1))
-
-    ## Calculate the histogram bins and maximum count across all bins.
-    ##
+    ## if the user is zooming in on a portion of the transcript, set the
+    ## limits of the horizontal axis accordingly.   Otherwise the limits
+    ## are determined by the lengt of the trnscript.
     if (is.null(xlim))
       xlim <- c(1, transcript$length())
 
-    x <- positions[!((positions < xlim[1]) | (positions > xlim[2]))]
+    ## discard any alignments that fall outside the horizontal limits.
+    ## (hist() will complain if you don't do it)
+    is.between <- function(x,lim) {
+        (x > lim[1]) & (x < lim[2])
+    }
+    x <- x[is.between(x,xlim)]
+    
+    ## save the graphical environment.
+    plt <- par("plt")
+
+    ## Draw the histogram in the top 2/3 of the plot area.
+    par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
+
+    ## Calculate the histogram bins and maximum count across all bins.
+    ##
     binsize <- 1   ## for small transcripts with few reads, use a bin size of one.
-    if (length(x) > 50) 
+    if ((xlim[2]-xlim[1]) > 100) 
         binsize <- 3  ## otherwise use a bin size of three
     histdata <- hist(x, breaks=seq(1,transcript$length(), binsize), plot=F)
     maxy <- max(histdata$count)
@@ -179,14 +218,16 @@ profile <- function(df, transcript, xlim=NULL) {
     text(xlim[2], tmp[4], paste0(length(x), " total reads"), adj = c( 1, 1.2 ), new=TRUE)
 
     ## start a new plot without clearing the current one.
+    ## I don't understand why this is necessary but without it the plots don't work.
     par(new=TRUE)
     plot.new()
 
-    ## draw the transcript in the lower half of the plot area
-    par(plt=c(plt[1], plt[2], 0, .5))
+    ## Draw the transcript in the lower 1/3 of the plot area
+    par(plt=c(plt[1], plt[2], plt[3], plt[3]+(plt[4]-plt[3])/3))
     par(usr=c(tmp[1], tmp[2], 0, 100))
     plot(transcript, xlim=xlim)
     par(usr=usr)
+    par(plt=plt)
 
 }
 
@@ -198,23 +239,30 @@ gene='NM_001005419'	# 'Ado'  single exon reverse
 gene='NM_013541'	# 'Gstp1'
 gene='NM_016978'	# 'Oat'
 gene='NM_011434'	# 'Sod1'
-gene='NM_144903'	# Aldob
 gene='NM_011044'	# 'Pck1'
 gene="NM_007409"   # ADH1
 #gene='NM_TEST'		# 'test'
+gene='NM_144903'	# Aldob
 
 plot.new()
 
-    df = morris.getalignments("113010_A", gene)
-    ##df=data.frame(position=c(2,2,2,3,4,4,5,5,5,5,7,7,9,9,9), length=22)
+df = morris.getalignments("113010_A", gene)
 
-    kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
-    ##kg <- data.frame(genome="mm9", name=c("gene1","gene2"), strand='+', txStart=1, txEnd=20, cdsStart=c(5,6), cdsEnd=c(8,9), exonCount=1, exonStarts="1,", exonEnds="20,", name2=c("test","test2"),stringsAsFactors = F)
-    rownames(kg) <- kg$name
+##df <- data.frame(position=49557732, length=22)
+##attr(df,"genome") <- "mm9"
 
-    gobj = transcript(kg[gene,])
+kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
+##kg <- data.frame(genome="mm9", name=c("gene1","gene2"), strand='+', txStart=1, txEnd=20,
+##                 cdsStart=c(5,6), cdsEnd=c(8,9), exonCount=1, exonStarts="1,", exonEnds="20,",
+##                 name2=c("test","test2"),stringsAsFactors = F)
+rownames(kg) <- kg$name
 
-    profile(df, gobj)
+gobj = transcript(kg[gene,])
+
+#df <- data.frame(position=c(49562310,49562310), length=22)
+attr(df,"genome") <- "mm9"
+
+profile(df, gobj, bias="middle")
 ##    profile(df, gobj, xlim=c(80,200))
 
 par(.pardefault)
