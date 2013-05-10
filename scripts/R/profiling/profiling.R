@@ -1,8 +1,6 @@
 
 library(grid)
 
-.pardefault <- par(no.readonly = T)
-
 
 morris.getalignments <- function(dataset, gene, group=NULL) {
     result <- tryCatch({
@@ -21,9 +19,11 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
         ## These individual tables will be joined together based on the gene name
         ## as a common key.   Oddly eough it is faster to do this in R than it is
         ## in SQL.
-        query <- paste0("select position,length from ",
+        query <- paste0("select feature,position,length from ",
                         "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
-                        "where d.name like '", dataset, "%' and a.feature like '", gene, "'")
+                        "where d.name like '", dataset, "%' and a.feature in (",
+                        paste0("'",gene,"'", collapse=","), ")")
+
         df <- dbGetQuery(con, query)
         if (nrow(df) == 0) {
             print(paste0("Error during database query: no data in dataset '", dataset,"'"))
@@ -42,7 +42,7 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
                 stop("No Data")
             }
         attr(df, "genome") <- gf[1,1]
-
+        attr(df, "dataset") <- dataset
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
@@ -56,7 +56,7 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
 ## This awesome flavor of OOP in R using closures is taken from a
 ## stackoverflow posting I stumbled across:
 ## http://stackoverflow.com/a/15245568/1135316
-##
+## Add a few lines and it is now an S3 style class.
 transcript = function(gdata) {
     starts <- as.numeric(strsplit(gdata$exonStarts,",")[[1]])
     ends <- as.numeric(strsplit(gdata$exonEnds,",")[[1]])
@@ -88,6 +88,8 @@ transcript = function(gdata) {
             }
             if (any(ends > pos)) {
                 positionInTranscript = positionInTranscript + (pos - starts[ends > pos][1] + 1)
+            } else {
+                positionInTranscript = positionInTranscript + (pos - tail(ends,1))
             }
         }
         
@@ -110,86 +112,109 @@ transcript = function(gdata) {
       rpos=rpos
       )
     class(exported) <- "transcript"
-    return(exported)
+    invisible(exported)
 }
 
 print.transcript <- function(object) {
     cat("transcript ", object$name2(), ", ", object$length(), "\n")
 }
 
-plot.transcript <- function(obj) {
-    ## draw the transcript in the third frame down.
-    plot(c(0,  obj$length()), c(0,100), type="n", axes=F, xlab='', ylab='', bty="n", new=T)
+plot.transcript <- function(self, xlim=NULL) {
+    if (is.null(xlim))
+      xlim <- c(1, self$length())
+    clip(xlim[1], xlim[2], 0, 100)
 
     cdsHeight = 5   # height of coding region, expressed as percentage of plot height
-    segments(0, 100-cdsHeight,  obj$length(),  100-cdsHeight, lwd=5, lend=2)
-    if (obj$isCoding()) {
+    segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
+    if (self$isCoding()) {
         ## Label the endpoints of the coding region and place the gene
         ## name in the middle of the coding region.
-    
-        rect(obj$cdsStart(), 100-2*cdsHeight, obj$cdsEnd(), 100, col='blue')
-        text((obj$cdsStart() + obj$cdsEnd())/2, 100-2*cdsHeight-5,
-             adj=c(.5,0.5), obj$name2())
-        text(obj$cdsStart(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(obj$cdsStart()))
-        text(obj$cdsEnd(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(obj$cdsEnd()))
+
+        rect(self$cdsStart(), 100-2*cdsHeight, self$cdsEnd(), 100, col='blue')
+        text((self$cdsStart() + self$cdsEnd())/2, 100-2*cdsHeight-5,
+             adj=c(.5,0.5), self$name2())
+        text(self$cdsStart(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(self$cdsStart()))
+        text(self$cdsEnd(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(self$cdsEnd()))
     } else {
         ## There is no coding region - this is a non-coding gene.
         ## Label the endpoints of the transcript and label the gene in the middle.
-        text( obj$length()/2, 100-2*cdsHeight-5,
-             adj=c(.5,0.5), obj$name2())
-        text(0, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(0))
-        text( obj$length(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character( obj$length() ))
+        text( self$length()/2, 100-2*cdsHeight-5,
+             adj=c(.5,0.5), self$name2())
+        text(1, 100-2*cdsHeight-5, adj=c(.5,0.5), as.character(0))
+        text(self$length(), 100-2*cdsHeight-5, adj=c(.5,0.5), as.character( self$length() ))
     }
 }
 
+profile <- function(df, transcript, xlim=NULL) {
+    usr = par("usr")
+    
+    ## Calculate the relative position of each alignment w.r.t. start of transcript.
+    positions = sapply(X=df$position, FUN=transcript$rpos)
+
+    ## save the graphical environent.
+    plt <- par("plt")
+
+    ## prepare the graph the histogram in the top half of the figure.
+    par(plt=c(plt[1], plt[2], .5, 1))
+
+    ## Calculate the histogram bins and maximum count across all bins.
+    ##
+    if (is.null(xlim))
+      xlim <- c(1, transcript$length())
+
+    x <- positions[!((positions < xlim[1]) | (positions > xlim[2]))]
+    binsize <- 1   ## for small transcripts with few reads, use a bin size of one.
+    if (length(x) > 50) 
+        binsize <- 3  ## otherwise use a bin size of three
+    histdata <- hist(x, breaks=seq(1,transcript$length(), binsize), plot=F)
+    maxy <- max(histdata$count)
+
+    plot(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0], type='h',
+         xlim=xlim, ylim=c(0,1.25*maxy), 
+         lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n')
+
+    # The usr coordinates appear to change after plot(), so fetch them again.
+    tmp = par("usr")
+    text(xlim[1], tmp[4], attr(df, "dataset"), adj=c(0,1.2), new=TRUE)
+    text(xlim[2], tmp[4], paste0(length(x), " total reads"), adj = c( 1, 1.2 ), new=TRUE)
+
+    ## start a new plot without clearing the current one.
+    par(new=TRUE)
+    plot.new()
+
+    ## draw the transcript in the lower half of the plot area
+    par(plt=c(plt[1], plt[2], 0, .5))
+    par(usr=c(tmp[1], tmp[2], 0, 100))
+    plot(transcript, xlim=xlim)
+    par(usr=usr)
+
+}
+
+
+.pardefault <- par(no.readonly = T)
 
 #gene="NR_029560"   # Mir150
-gene="NM_007409"   # ADH1
 gene='NM_001005419'	# 'Ado'  single exon reverse
 gene='NM_013541'	# 'Gstp1'
 gene='NM_016978'	# 'Oat'
 gene='NM_011434'	# 'Sod1'
 gene='NM_144903'	# Aldob
 gene='NM_011044'	# 'Pck1'
+gene="NM_007409"   # ADH1
+#gene='NM_TEST'		# 'test'
 
-# read all the alignments from 'dataset' that align to 'gene'
-# so these will be multiple alignments, but only those that align to
-# a single gene.
-#
-df = morris.getalignments("113010_A", gene)
+plot.new()
 
-# read all known genes
-kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
-rownames(kg) <- kg$name
+    df = morris.getalignments("113010_A", gene)
+    ##df=data.frame(position=c(2,2,2,3,4,4,5,5,5,5,7,7,9,9,9), length=22)
 
-gobj = transcript(kg[gene,])
+    kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
+    ##kg <- data.frame(genome="mm9", name=c("gene1","gene2"), strand='+', txStart=1, txEnd=20, cdsStart=c(5,6), cdsEnd=c(8,9), exonCount=1, exonStarts="1,", exonEnds="20,", name2=c("test","test2"),stringsAsFactors = F)
+    rownames(kg) <- kg$name
 
-## For each alignment from 'gene', add a column for position within that transcript.
-df$transcriptPosition = sapply(X=df$position, FUN=gobj$rpos)
+    gobj = transcript(kg[gene,])
+
+    profile(df, gobj)
+##    profile(df, gobj, xlim=c(80,200))
 
 par(.pardefault)
-
-#par(fig=c(0,0.2,0,0.2), new=FALSE)
-plotIDs <- matrix(c(1:4), 4, 1, byrow=T)
-layout(plotIDs, widths = c(1), heights = c(0.5,1,1,0.5))
-par(mai=c(0, 0.5, 0, 0))
-frame()  ## skip the top-most frame
-## draw a histogram in the second frame down.
-
-## Calculate the histogram bins and maximum count across all bins.
-##
-histdata = hist(df$transcriptPosition,breaks= gobj$length()/3,plot=F)
-maxy=max(histdata$count[histdata$count != 0])
-par(usr = c(0,  gobj$length(), 0, maxy) )
-
-plot(histdata$mid[histdata$count != 0],histdata$count[histdata$count != 0], type='h',
-      xlim=c(0, gobj$length()), ylim=c(0,maxy+10), 
-      lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n')
-
-
-# Put the total number of reads in the upper-right corner of the histogram.
-usr <- par( "usr" )
-text( usr[ 2 ], usr[ 4 ], paste0(nrow(df), " total reads"),    adj = c( 1.2, 5 ))
- 
-plot(gobj)
-
