@@ -61,14 +61,16 @@ transcript = function(gdata) {
     starts <- as.numeric(strsplit(gdata$exonStarts,",")[[1]])
     ends <- as.numeric(strsplit(gdata$exonEnds,",")[[1]])
     elen <- ends - starts
+    print(elen)
     transcriptLength <- sum(elen)
+    print(transcriptLength)
 
-    length = function() transcriptLength
-    cdsLength = function() cdsEnd()-cdsStart()
-    cdsStart = function() rpos(gdata$cdsStart)
-    cdsEnd = function() rpos(gdata$cdsEnd)
-    txStart = function() rpos(gdata$txStart)
-    txEnd = function() rpos(gdata$txEnd)
+    cdsStart = function() rpos(if (gdata$strand == '+') { gdata$cdsStart } else { gdata$cdsEnd })
+    cdsEnd = function() rpos(if (gdata$strand == '+') { gdata$cdsEnd-1 } else { gdata$cdsStart+1 })
+    cdsLength = function() cdsEnd()-cdsStart()+1
+    txStart = function()  rpos(if (gdata$strand == '+') { gdata$txStart } else { gdata$txEnd })
+    txEnd = function() rpos(if (gdata$strand == '+') { gdata$txEnd-1 } else { gdata$txStart+1 })
+    length = function() txEnd()-txStart()+1
     isCoding = function() (gdata$cdsEnd != gdata$cdsStart)
     name = function() (gdata$name)
     name2 = function() (gdata$name2)
@@ -78,43 +80,38 @@ transcript = function(gdata) {
         ## position, PLUS the beginning portion of the exon that contains the position.
 
         offset = 0
-        if (gdata$strand == '+') {
-            ## there are two primary situations:
-            ## 1) the position is to the right of the start of the transcript
-            ## 2) the position is to the left of the start of the transcript
-            if (pos >= starts[1]) {
-                ## positioned to the right of the beginning of the gene
-                if (any(ends<pos)) {
-                    offset = sum( elen[ends<pos] )
-                }
-                if (any(ends > pos)) {
-                    offset = offset +  (pos - starts[ends > pos][1] + 1)
-                } else {
-                    offset = offset + (pos - tail(ends,1)[[1]] + 1)
-                }
+        ## there are two primary situations:
+        ## 1) the position is to the right of the start of the transcript
+        ## 2) the position is to the left of the start of the transcript
+        if (pos >= starts[1]) {
+            ## positioned to the right of the beginning of the gene
+            if (any(ends<=pos)) {
+                offset = sum( elen[ends<=pos] )
+            }
+            if (any(ends > pos)) {
+                offset = offset +  (pos - starts[ends > pos][1] + 1)
             } else {
-                offset = pos-starts[1]
+                offset = offset + (pos - tail(ends,1)+1)
             }
         } else {
-            if (pos < tail(ends,1)) {
-                if (any(starts > pos)) {
-                    offset = sum( elen[starts>pos] )
-                }
-                if (any(starts < pos)) {
-                    offset = offset + (tail(ends[starts<pos],1) - pos + 1)
-                } else {
-                    offset = offset + (starts[1] - pos)
-                }
-            } else {
-                offset = pos - tail(ends,1)
-            }
+            offset = pos-starts[1]
         }
         
-        ## if (gdata$strand == '-') {
-        ##     positionInTranscript = transcriptLength - positionInTranscript + 1
-        ## }
+        if (gdata$strand == '-') {
+             offset = transcriptLength - offset+2
+        }
         return(offset)
     }
+    
+
+    cat(paste(name(), "\n"))
+    cat(paste("\tcdsStart", cdsStart(), "\n"))
+    cat(paste("\tcdsEnd", cdsEnd(), "\n"))
+    cat(paste("\tcds span", cdsLength(), "\n"))
+
+    cat(paste("\ttxStart", txStart(), "\n"))
+    cat(paste("\ttxEnd", txEnd(), "\n"))
+    cat(paste("\ttx span", length(), "\n"))
     
     exported = list(
       length=length,
@@ -237,12 +234,12 @@ profile <- function(df, transcript, xlim=NULL, bias="start", minlen=NULL) {
 #gene="NR_029560"   # Mir150
 gene='NM_001005419'	# 'Ado'  single exon reverse
 gene='NM_013541'	# 'Gstp1'
-gene='NM_016978'	# 'Oat'
-gene='NM_011434'	# 'Sod1'
-gene='NM_011044'	# 'Pck1'
 gene="NM_007409"   # ADH1
 #gene='NM_TEST'		# 'test'
-gene='NM_144903'	# Aldob
+gene='NM_016978'	# Oat '-'
+gene='NM_144903'	# Aldob '-'
+gene='NM_011434'	# 'Sod1'
+gene='NM_011044'	# 'Pck1'
 
 plot.new()
 
@@ -256,8 +253,10 @@ kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
 ##                 cdsStart=c(5,6), cdsEnd=c(8,9), exonCount=1, exonStarts="1,", exonEnds="20,",
 ##                 name2=c("test","test2"),stringsAsFactors = F)
 rownames(kg) <- kg$name
-
+print(kg[gene,])
 gobj = transcript(kg[gene,])
+x = sapply(X=df$position, FUN=gobj$rpos)
+print(head(x))
 
 #df <- data.frame(position=c(49562310,49562310), length=22)
 attr(df,"genome") <- "mm9"
