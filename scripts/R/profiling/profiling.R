@@ -106,15 +106,6 @@ transcript = function(gdata) {
         return(offset)
     }
     
-
-    ## cat(paste(name(), "\n"))
-    ## cat(paste("\tcdsStart", cdsStart(), "\n"))
-    ## cat(paste("\tcdsEnd", cdsEnd(), "\n"))
-    ## cat(paste("\tcds span", cdsLength(), "\n"))
-
-    ## cat(paste("\ttxStart", txStart(), "\n"))
-    ## cat(paste("\ttxEnd", txEnd(), "\n"))
-    ## cat(paste("\ttx span", length(), "\n"))
     stopifnot(txStart() == 1)
     
     exported = list(
@@ -175,10 +166,21 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
     }
 }
 
-profile <- function(df, transcript, xlim=NULL, units="nucleotide", bias="start", minlen=NULL) {
+profile <- function(df, gene.data) {
+    gene <- transcript(gene.data)
+    transcript <- function() gene
+    alignments <- function() df
+    exported = list(transcript=transcript, alignments=alignments )
+    class(exported) <- "profile"
+    invisible(exported)
+}
+
+plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=NULL) {
     usr = par()$usr
     plt = par()$plt
 
+    df <- self$alignments()
+    transcript <- self$transcript()
     
     ## Calculate the relative position of each alignment w.r.t. start of transcript.
     ## position may be calculated with respect to the middle of the read or
@@ -214,9 +216,6 @@ profile <- function(df, transcript, xlim=NULL, units="nucleotide", bias="start",
     }
     x <- x[is.between(x,xlim)]
     
-    ## save the graphical environment.
-    plt <- par("plt")
-
     ## Draw the histogram in the top 2/3 of the plot area.
     par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
 
@@ -250,13 +249,12 @@ profile <- function(df, transcript, xlim=NULL, units="nucleotide", bias="start",
     par(plt=c(plt[1], plt[2], plt[3], plt[3]+(plt[4]-plt[3])/3))
     par(usr=c(tmp[1], tmp[2], 0, 100))
     plot(transcript, xlim=xlim, units=units)
+
+    ## restore the graphical environment
     par(usr=usr)
     par(plt=plt)
-
 }
 
-
-.pardefault <- par(no.readonly = T)
 
 #gene="NR_029560"   # Mir150
 #gene='NM_TEST'		# 'test'
@@ -281,12 +279,13 @@ kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
 ##                 name2=c("test","test2"),stringsAsFactors = F)
 rownames(kg) <- kg$name
 ##print(kg[gene,])
-gobj = transcript(kg[gene,])
 
 #df <- data.frame(position=c(49562310,49562310), length=22)
 #attr(df,"genome") <- "mm9"
 
-profile(df, gobj, bias="middle", minlen=28, units="aa", xlim=c(15, 115))
+p = profile(df, kg[gene,])
+
+plot(p, bias="middle", minlen=28, units="aa", xlim=c(15, 115))
+plot(p, bias="middle", minlen=28, xlim=c(15, 115))
 
 
-par(.pardefault)

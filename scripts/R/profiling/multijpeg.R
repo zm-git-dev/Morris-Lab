@@ -23,8 +23,8 @@ for (gene in names(profiles)) {
     kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
     rownames(kg) <- kg$name
 
-    gobj = transcript(kg[gene,])
-
+    ribo.profile = profile(df, kg[gene,])
+    print(paste0(gene,":"))
     for (x in profiles[[gene]]) {
         xlim=as.numeric(x)
         jpeg(filename = paste0("Rplot_", gobj$name2(), "_", xlim[1], "-", xlim[2], ".jpeg"),
@@ -35,7 +35,7 @@ for (gene in names(profiles)) {
         ##     lines of margin to be specified on the four sides of the plot
         par(mar=c(1,2,1,2))
         print(xlim)
-        profile(df, gobj, bias="middle", minlen=28, xlim=xlim, units="aa")
+        plot(ribo.profile, minlen=28, xlim=xlim, units="aa")
         dev.off()
     }
 
