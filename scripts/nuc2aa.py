@@ -56,13 +56,10 @@ def nt2protein(s1):
 def main(argv = None):
     Entrez.email = "warthc@uw.washington.edu"     # Always tell NCBI who you are
 
-    genes = (
-        'NM_009654', 
-        'NM_009692', ## Apoa1 apolipoprotein A-I
-        'NM_009693', ## Mus musculus apolipoprotein B (Apob)
-        'NM_181849', ## FGB
-        'NM_133862'  ## Fgg
-      )
+    genes = [
+        "NM_009790"
+      ]
+    print genes
     for gene in genes:
         print gene
         handle = Entrez.efetch(db="nucleotide", 
