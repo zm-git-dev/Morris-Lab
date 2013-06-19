@@ -301,6 +301,9 @@ identifyPch <- function(x, y = NULL, n = length(x), pch = 19, ...)
 
 
 ## retrieve a list of dataset names that have per-gene expression values stored in the database.
+
+## This routine will let you fetch the names of datasets based on
+## criteria such as organism, tissue, or genotype.
 ##
 morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NULL) {
 
@@ -342,7 +345,7 @@ morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NUL
         ##  dbUnloadDriver(drv)
     })
 
-    return (df);
+    return (df$name);
 }
 
 

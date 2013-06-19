@@ -1,12 +1,10 @@
 library(Biobase)
 require(genefilter)
 
-datasets <- c("103112_B_MM1",
-              "030713_A_MM1",
-              "032513_B_MM1",
-              "103112_A_MM1",
-              "030713_B_MM1",
-              "032513_A_MM1")
+
+control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+treated <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+/TR+")
+datasets <- c(control, treated)
 
 ds = morris.genecounts(datasets, group=NULL)
 genome = attr(ds, "genome")
@@ -39,10 +37,11 @@ reference = df[match("Col1a2", cn),]
 df <- sweep(df,2,as.numeric(reference), '/')
 
 e=(df)
-m1=rowMeans(e[,1:3])
-m2=rowMeans(e[,4:6])
+m1=rowMeans(e[,control])
+m2=rowMeans(e[,treated])
 plot(m1, m2, xlab="Control", ylab="Tramp+",log="xy")
-title("Control vs. TRAMP+ (3 samples of each)", sub="min=50,epithel excluded, rpm",cex.main=.7,
+tstr = paste("control (", length(control), ") vs TRAMP+ (", length(treated), ")")
+title(tstr, sub="min=50,epithel excluded, rpm",cex.main=.7,
       cex.sub=.6, col.sub="grey73")
 
 s1 = rowSds(e[,1:3])
