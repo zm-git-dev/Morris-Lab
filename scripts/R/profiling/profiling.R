@@ -63,9 +63,8 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
 transcript = function(gdata) {
     starts <- as.numeric(strsplit(gdata$exonStarts,",")[[1]])
     ends <- as.numeric(strsplit(gdata$exonEnds,",")[[1]])
-    elen <- ends - starts
-    transcriptLength <- sum(elen)
-    ##print(transcriptLength)
+    elens <- ends - starts
+    transcriptLength <- sum(elens)
 
     cdsStart = function() rpos(if (gdata$strand == '+') { gdata$cdsStart } else { gdata$cdsEnd })
     cdsEnd = function() rpos(if (gdata$strand == '+') { gdata$cdsEnd-1 } else { gdata$cdsStart+1 })
@@ -73,10 +72,27 @@ transcript = function(gdata) {
     peptideLength = function() cdsLength()/3
     txStart = function()  rpos(if (gdata$strand == '+') { gdata$txStart } else { gdata$txEnd })
     txEnd = function() rpos(if (gdata$strand == '+') { gdata$txEnd-1 } else { gdata$txStart+1 })
-    length = function() txEnd()-txStart()+1
+    txLength = function() txEnd()-txStart()+1
     isCoding = function() (gdata$cdsEnd != gdata$cdsStart)
     name = function() (gdata$name)
     name2 = function() (gdata$name2)
+    cpos = function(offset) {
+        ## Give a an offset from the beginning of the transcript,
+        ## return an absolute chromosome position.
+        pos = offset
+        pos = pos - 1
+        if (gdata$strand == '-') {
+            pos = transcriptLength + pos - 1
+        }
+        for (i in seq(length(elens))) {
+            elen = elens[i]
+            if (pos - elen < 0)
+              break
+            pos = pos - elen
+        }
+        pos = pos + starts[i]
+        return(pos)
+    }
     rpos = function(pos) {
         ## Given a position on a chromosome, the position within transcript is
         ## equal to the sum of all exons that end before the
@@ -89,7 +105,7 @@ transcript = function(gdata) {
         if (pos >= starts[1]) {
             ## positioned to the right of the beginning of the gene
             if (any(ends<=pos)) {
-                offset = sum( elen[ends<=pos] )
+                offset = sum( elens[ends<=pos] )
             }
             if (any(ends > pos)) {
                 offset = offset +  (pos - starts[ends > pos][1] + 1)
@@ -106,10 +122,11 @@ transcript = function(gdata) {
         return(offset)
     }
     
+    stopifnot(transcriptLength == txLength())
     stopifnot(txStart() == 1)
     
     exported = list(
-      length=length,
+      txLength=txLength,
       cdsLength=cdsLength,
       cdsStart=cdsStart,
       cdsEnd=cdsEnd,
@@ -119,14 +136,17 @@ transcript = function(gdata) {
       name=name,
       name2=name2,
       rpos=rpos,
+      cpos=cpos,
       peptideLength=peptideLength
       )
     class(exported) <- "transcript"
     invisible(exported)
 }
 
-print.transcript <- function(object) {
-    cat("transcript ", object$name2(), ", ", object$length(), "\n")
+print.transcript <- function(this) {
+    cat(sprintf("gene %s\n", this$name2()))
+    cat(sprintf("   tx %d-%d  (%d)\n", this$txStart(), this$txEnd(), this$txLength()))
+    cat(sprintf("   cds %d-%d  (%d)\n", this$cdsStart(), this$cdsEnd(), this$cdsLength()))
 }
 
 plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
@@ -135,7 +155,7 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
           xlim <- c(self$cdsStart(), self$cdsEnd())
     } else {
         if (is.null(xlim))
-          xlim <- c(1, self$length())
+          xlim <- c(1, self$txLength())
     }
     
     cdsHeight = 10   # height of coding region, expressed as percentage of plot height
@@ -151,9 +171,11 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
              adj=c(.5,1.0), self$name2())
         text(cdslim[1], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(cdslim[1]))
         text(cdslim[2], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(cdslim[2]))
+        usr = par()$usr
         clip(xlim[1], xlim[2], 0, 100)
         segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
         rect(cdslim[1], 100-2*cdsHeight, cdslim[2], 100, col='blue')
+        do.call("clip", as.list(usr))  # reset to plot region
     } else {
         ## There is no coding region - this is a non-coding gene.
         ## Label the endpoints of the transcript and label the gene in the middle.
@@ -161,8 +183,11 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
              adj=c(.5,1.0), self$name2())
         text(xlim[1], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(xlim[1]))
         text(xlim[2], 100-2*cdsHeight-5, adj=c(.5,1.0), as.character(xlim[2]))
+        usr = par()$usr
         clip(xlim[1], xlim[2], 0, 100)
         segments(xlim[1], 100-cdsHeight,  xlim[2],  100-cdsHeight, lwd=5, lend="butt")
+        do.call("clip", as.list(usr))  # reset to plot region
+
     }
 }
 
@@ -175,7 +200,11 @@ profile <- function(df, gene.data) {
     invisible(exported)
 }
 
-plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=NULL) {
+print.profile <- function(this) {
+    print(this$transcript())
+}
+
+plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=0, identify=FALSE, ...) {
     usr = par()$usr
     plt = par()$plt
 
@@ -186,26 +215,28 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     ## position may be calculated with respect to the middle of the read or
     ## the 5'-end
     if (bias == "middle") {
-        x = sapply(X=df$position+df$length/2.0, FUN=transcript$rpos)
+        df$position = sapply(X=df$position+df$length/2.0, FUN=transcript$rpos)
     } else {
-        x = sapply(X=df$position, FUN=transcript$rpos)
+        df$position = sapply(X=df$position, FUN=transcript$rpos)
     }
-    ## if the user specified a minimum read length, discard shorter reads.
-    if (!is.null(minlen))
-        x = x[df$len >= minlen]
+
 
     ## if the user is zooming in on a portion of the transcript, set the
     ## limits of the horizontal axis accordingly.   Otherwise the limits
     ## are determined by the length of the transcript.
+    complete = FALSE
     if (units == "aa") {
         if (is.null(xlim)) {
-            xlim = c(transcript$cdsStart(), transcript$cdsEnd())
+            complete = TRUE
+            xlim = c(1, transcript$peptideLength())
         } 
         ## convert nucleotide positions to codon position
-        x = (x - transcript$cdsStart())/3
+        df$position = round((df$position - transcript$cdsStart())/3)
     } else {
-        if (is.null(xlim))
-          xlim <- c(1, transcript$length())
+        if (is.null(xlim)) {
+            complete = TRUE
+            xlim <- c(1, transcript$txLength())
+        }
     }
 
     
@@ -214,8 +245,15 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     is.between <- function(x,lim) {
         (x > lim[1]) & (x < lim[2])
     }
-    x <- x[is.between(x,xlim)]
-    
+    df <- df[is.between(df$position,xlim),]
+
+    ## if the user specified a minimum read length, discard shorter reads.
+    ##print (df[df$len < minlen,])
+    if (minlen < 0) 
+        df = df[df$len < -minlen,]
+    else
+        df = df[df$len >= minlen,]
+      
     ## Draw the histogram in the top 2/3 of the plot area.
     par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
 
@@ -226,19 +264,24 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
         breaks=seq(1, transcript$peptideLength(), 1)
     } else {
         ## otherwise use a bin size of three
-        breaks=seq(1,transcript$length(), 3)
+        if ((xlim[2] - xlim[1]) > 100) 
+          breaks=seq(1,transcript$txLength(), 3)
+        else
+          breaks=seq(1,transcript$txLength(), 1)
+          
     }
-    histdata <- hist(x, breaks=breaks, plot=F)
+    histdata <- hist(df$position, breaks=breaks, plot=F)
     maxy <- max(histdata$count)
 
     plot(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0], type='h',
-         xlim=xlim, ylim=c(0,1.25*maxy), 
-         lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n')
+         xlim=xlim, ## ylim=c(0,1.25*maxy), 
+         lwd=3, lend=2,ylab='',xlab='',main='',xaxt='n',bty='n', ...)
 
-    # The usr coordinates appear to change after plot(), so fetch them again.
+    # The usr coordinates appear to change after plot(), so fetch the coordinates
+    # again before positioning the labels.
     tmp = par("usr")
     text(xlim[1], tmp[4], attr(df, "dataset"), adj=c(0,1.2), new=TRUE)
-    text(xlim[2], tmp[4], paste0(length(x), " total reads"), adj = c( 1, 1.2 ), new=TRUE)
+    text(xlim[2], tmp[4], paste0(nrow(df), " total reads"), adj = c( 1, 1.2 ), new=TRUE)
 
     ## start a new plot without clearing the current one.
     ## I don't understand why this is necessary but without it the plots don't work.
@@ -246,9 +289,55 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     plot.new()
 
     ## Draw the transcript in the lower 1/3 of the plot area
+    ## plt(x1, x2, y1, y2)
     par(plt=c(plt[1], plt[2], plt[3], plt[3]+(plt[4]-plt[3])/3))
+
+    ## usr(x1, x2, y1, y2)
     par(usr=c(tmp[1], tmp[2], 0, 100))
     plot(transcript, xlim=xlim, units=units)
+
+    legend = ""
+    legend=paste(legend,"units=",paste0("\"", units, "\""))
+    if (complete) {
+        legend=paste(legend,"whole transcript")
+    } else {
+        legend=paste(legend,",xlim=",xlim[1], ",", xlim[2])
+    }
+    legend=paste(legend,"bias=",paste0("\"", bias, "\""))
+    legend=paste(legend,"minlen=",minlen)
+    
+    text(tmp[1], 0, legend, adj=c(0,-1), col="grey56")
+    
+    par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
+    par(usr=tmp)
+
+    if (identify == TRUE) {
+        ## A function to use identify to select points, and overplot the
+        ## points with another symbol as they are selected
+        identifyPch <- function(x, y=NULL, n=length(x), pch=19, ...)
+          {
+              xy <- xy.coords(x, y); x <- xy$x; y <- xy$y
+              sel <- rep(FALSE, length(x)); res <- integer(0)
+          }
+
+        identifyPch(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0])
+        
+        xy <- xy.coords(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0])
+        x <- xy$x; y <- xy$y
+        
+        repeat {
+            ans <- identify(x, y, n=1, plot=FALSE, ...)
+            if(!length(ans)) break
+            print(paste0("(",x[ans], ",", y[ans],")  ", self$transcript()$cpos(x[ans])))
+        }
+    }
+    
+    ## repeat {
+    ##     coord = locator(1)
+    ##     if(is.null(coord)) 
+    ##         break
+    ##     print(paste0(round(coord$x), ",", round(coord$y)))
+    ## }
 
     ## restore the graphical environment
     par(usr=usr)
@@ -258,13 +347,17 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
 
 #gene="NR_029560"   # Mir150
 #gene='NM_TEST'		# 'test'
-gene='NM_016978'	# Oat '-'
 gene='NM_144903'	# Aldob '-'
 gene='NM_011434'	# 'Sod1'
 gene='NM_011044'	# 'Pck1'
 gene='NM_013541'	# 'Gstp1'
-gene='NM_001005419'	# 'Ado'  single exon reverse
+gene='NM_001005419'	# 'Ado'  single exon '-'
 gene="NM_007409"   # ADH1
+gene="NR_029600"   # Mir122a   single exon '+'
+gene="NM_133862"    ## Fgg
+gene ="NM_009654" ## Alb
+gene='NM_016978'	# Oat '-'
+gene='NM_009790'    ## CALM1 - Calmodulin - no B-sheets
 
 plot.new()
 
@@ -285,7 +378,8 @@ rownames(kg) <- kg$name
 
 p = profile(df, kg[gene,])
 
-plot(p, bias="middle", minlen=28, units="aa", xlim=c(15, 115))
-plot(p, bias="middle", minlen=28, xlim=c(15, 115))
-
+print(p)
+##debug(plot.profile)
+plot(p
+     , minlen=28)
 
