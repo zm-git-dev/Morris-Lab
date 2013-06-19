@@ -34,10 +34,7 @@ morris.fetchData <- function(datasets, group=NULL) {
         }
 
         getGenome <- function(dataset) {
-            ## SQL query for retrieving the per-gene alignment coun of a single dataset.
-            ## These individual tables will be joined together based on the gene name
-            ## as a common key.   Oddly eough it is faster to do this in R than it is
-            ## in SQL.
+            ## SQL query for retrieving the genome of each experiment.
             query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
                      "where d.name like '", dataset, "%'")
             df <- dbGetQuery(con, query)
@@ -70,7 +67,7 @@ morris.fetchData <- function(datasets, group=NULL) {
         genome=gf[1,1]
         
         f <- function(dataset) {
-            ## SQL query for retrieving the per-gene alignment coun of a single dataset.
+            ## SQL query for retrieving the per-gene alignment count of a single dataset.
             ## These individual tables will be joined together based on the gene name
             ## as a common key.   Oddly eough it is faster to do this in R than it is
             ## in SQL.
@@ -331,9 +328,16 @@ morris.datasets <- function(group=NULL) {
 
 
 morris.genecounts <- function(datasets, group=NULL) {
-    df <- morris.fetchData(datasets, group)
-    rownames(df) <- df[,1]
-    df <- subset(df, select=-c(name) )
+    ds <- morris.fetchData(datasets, group)
+    rownames(ds) <- ds[,1]
+    df <- subset(ds, select=-c(name) )
+    
+    ## Copy the attribute for the original data.frame if necessary
+    ## see http://stackoverflow.com/a/10420036/1135316
+    n = names(df)
+    mostattributes(df) = attributes(ds)
+    names(df) = n
+    
     return(df)
 }
 
