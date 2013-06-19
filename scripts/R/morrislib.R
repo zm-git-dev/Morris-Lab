@@ -298,11 +298,30 @@ identifyPch <- function(x, y = NULL, n = length(x), pch = 19, ...)
     return(res)
 }
 
+
+
 ## retrieve a list of dataset names that have per-gene expression values stored in the database.
 ##
-morris.datasets <- function(group=NULL) {
-    query <- paste0("select d.name from (SELECT dataset_id FROM morris.new_alignments_tbl ",
-                   "group by dataset_id) a join datasets_tbl d on d.id=a.dataset_id;")
+morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NULL) {
+
+    ## a query to find all datasets that have alignments in the new_alignments_tbl table.
+    query.alignments <- paste("select d.name, d.expr_id from",
+                              "(SELECT dataset_id FROM morris.new_alignments_tbl",
+                              "group by dataset_id) a",
+                              "join datasets_tbl d ON d.id = a.dataset_id")
+
+    ## a query to find experiments that use a certain organism, tissue, or genotype.
+    query.experiments <- "select id from experiments_tbl"
+    selects <- c( ifelse(!is.null(organism),  paste0("organism like '", organism, "'"), NA),
+                  ifelse(!is.null(tissue),  paste0("tissue like '", tissue, "'"), NA),
+                  ifelse(!is.null(genotype),  paste0("genotype like '", genotype, "'"), NA) )
+    if (any(!is.na(selects))) 
+        query.experiments = paste( query.experiments, "where", paste(selects[!is.na(selects)], collapse=" and "))
+
+    ## Assemble the complete query from the sub-queries.
+    query <- paste("select d.name from (", query.alignments, ") d",
+                   "join (", query.experiments, ") e",
+                   "ON d.expr_id = e.id")
     result <- tryCatch({
         drv <- dbDriver("MySQL")
         if (is.null(group)) {
@@ -435,4 +454,3 @@ morris.normalize <- function(df,
     }
     return(x)
 }
-
