@@ -347,7 +347,8 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
     kquery <- paste0("select * from knowngenes2 k ",
                      "where k.genome=\"", genome, "\"");
     if (!is.null(gene)) {
-        kquery <- paste0(kquery, " and name in (", paste0("'",gene,"'", collapse=","), ")")
+        kquery <- paste0(kquery, " and ( name in (", paste0("'",gene,"'", collapse=","), ")")
+        kquery <- paste0(kquery, " or name2 in (", paste0("'",gene,"'", collapse=","), ")  )")
     }
 
     result <- tryCatch({
