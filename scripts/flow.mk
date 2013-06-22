@@ -258,10 +258,8 @@ ${aligner}_out/htseq.bam: ${aligner}_out/htseq_hits.sam
 	mv ${aligner}_out/htseq_s.bam.bai  ${aligner}_out/htseq.bam.bai
 
  
-${aligner}_out/final.bam: ${aligner}_out/overlaps_exons_uniq.bed
-	(samtools view -H ${aligner}_out/accepted_hits.bam; \
-	 samtools view ${aligner}_out/accepted_hits.bam | fgrep -f <( cut -f 4 $< )) | \
-		samtools view -S -b /dev/stdin > ${aligner}_out/igv.bam
+${aligner}_out/final.bam: ${aligner}_out/accepted_final.sam
+	samtools view -S -b  ${aligner}_out/accepted_final.sam > ${aligner}_out/igv.bam	
 	samtools sort ${aligner}_out/igv.bam ${aligner}_out/igv_s
 	samtools index ${aligner}_out/igv_s.bam
 	mv ${aligner}_out/igv_s.bam  ${aligner}_out/final.bam
