@@ -37,6 +37,8 @@ my $count = 0;
 my $seqio;
 my $bario;
 
+my $allowed_mismatches = 0;
+
 open my $seqio, '-|', '/bin/zcat', $seqfile or die "could not open $seqfile: $!\n";
 open my $bario, '-|', '/bin/zcat', $barfile or die "could not open $barfile: $!\n";
 
