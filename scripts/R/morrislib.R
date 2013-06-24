@@ -432,7 +432,8 @@ morris.normalize <- function(df,
 
         ## sapply gives a matrix.
         ## lapply would return a list of lists (not useful here)
-        tmp <- sapply(N,function(n) {return(n*L)})
+        #tmp <- sapply(N,function(n) {return(n*L)})
+        tmp = (N*L)
         tmp <- (10^9)/tmp
         x <- C*tmp
         
