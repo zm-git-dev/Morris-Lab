@@ -143,12 +143,14 @@ transcript = function(gdata) {
     invisible(exported)
 }
 
+## specialization of generic print function for instances of 'transcript' class.
 print.transcript <- function(this) {
     cat(sprintf("gene %s\n", this$name2()))
     cat(sprintf("   tx %d-%d  (%d)\n", this$txStart(), this$txEnd(), this$txLength()))
     cat(sprintf("   cds %d-%d  (%d)\n", this$cdsStart(), this$cdsEnd(), this$cdsLength()))
 }
 
+## specialization of generic plot function for instances of 'transcript' class.
 plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
     if (units == "aa") {
         if (is.null(xlim)) 
@@ -191,6 +193,16 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
     }
 }
 
+## define S3 class 'profile' to hold instances of ribosome profile data.
+##
+## Typical vignette:
+##    gene ="NM_009654"   ## Albumin
+##    df = morris.getalignments("113010_A", gene)
+##    kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
+##    p = profile(df, kg[gene,])
+##    print(p)
+##    plot(p, minlen=28)
+##
 profile <- function(df, gene.data) {
     gene <- transcript(gene.data)
     transcript <- function() gene
@@ -200,10 +212,12 @@ profile <- function(df, gene.data) {
     invisible(exported)
 }
 
+## specialization of generic print function for instances of 'profile' class.
 print.profile <- function(this) {
     print(this$transcript())
 }
 
+## specialization of generic plot function for instances of 'profile' class.
 plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=0, identify=FALSE, ...) {
     usr = par()$usr
     plt = par()$plt
@@ -380,6 +394,5 @@ p = profile(df, kg[gene,])
 
 print(p)
 ##debug(plot.profile)
-plot(p
-     , minlen=28)
+plot(p, minlen=28)
 
