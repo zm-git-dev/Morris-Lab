@@ -53,11 +53,21 @@ morris.getalignments <- function(dataset, gene, group=NULL) {
     return(df)
 }
 
+## define S3 class 'transcript' to hold instances gene transcript info.
+##
+## generally not used directly but it used as part of the 'profile' class.
+##
+## Typical vignette:
+##    gene ="NM_009654"   ## Albumin
+##    df = morris.getalignments("113010_A", gene)
+##    kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
+##    p = profile(df, kg[gene,])
+##    print(p)
+##    plot(p, minlen=28)
+##
 ## This awesome flavor of OOP in R using closures is taken from a
 ## stackoverflow posting I stumbled across:
 ## http://stackoverflow.com/a/15245568/1135316
-
-##
 ## I've since realize that this is just the S3 style of classes in R.
 ## Add a few lines and it is now an S3 style class.
 transcript = function(gdata) {
@@ -194,6 +204,8 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
 }
 
 ## define S3 class 'profile' to hold instances of ribosome profile data.
+## A 'profile' is the set of ribosome positions for a gene in an experiment.
+## One profile instance would hold data for one gene in one experiment.
 ##
 ## Typical vignette:
 ##    gene ="NM_009654"   ## Albumin
@@ -207,8 +219,21 @@ profile <- function(df, gene.data) {
     gene <- transcript(gene.data)
     transcript <- function() gene
     alignments <- function() df
-    exported = list(transcript=transcript, alignments=alignments )
+    rpositions <- function() {   # relative positions w.r.t. start of transcript
+        rpositions = sapply(X=df$position, FUN=gene$rpos)
+    }
+
+    ## precalculate the relative ribosome positions on the transcript.
+    df$rpositions = rpositions()
+    
+    ## make a list of methods exported from instances of this class.
+    exported = list(transcript=transcript, alignments=alignments, rpositions=rpositions )
+
+    ## turn into an S3 class by setting the class attribute.
     class(exported) <- "profile"
+
+    ## return a list of closures, with some local variables already bound.
+    ## that's all an S3 class is - a list of closures.
     invisible(exported)
 }
 
@@ -228,12 +253,8 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     ## Calculate the relative position of each alignment w.r.t. start of transcript.
     ## position may be calculated with respect to the middle of the read or
     ## the 5'-end
-    if (bias == "middle") {
-        df$position = sapply(X=df$position+df$length/2.0, FUN=transcript$rpos)
-    } else {
-        df$position = sapply(X=df$position, FUN=transcript$rpos)
-    }
-
+    if (bias == "middle") 
+        df$rpositions = df$rpositions + df$length/2.0
 
     ## if the user is zooming in on a portion of the transcript, set the
     ## limits of the horizontal axis accordingly.   Otherwise the limits
@@ -245,7 +266,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
             xlim = c(1, transcript$peptideLength())
         } 
         ## convert nucleotide positions to codon position
-        df$position = round((df$position - transcript$cdsStart())/3)
+        df$rposition = round((df$rposition - transcript$cdsStart())/3)
     } else {
         if (is.null(xlim)) {
             complete = TRUE
@@ -259,7 +280,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     is.between <- function(x,lim) {
         (x > lim[1]) & (x < lim[2])
     }
-    df <- df[is.between(df$position,xlim),]
+    df <- df[is.between(df$rposition,xlim),]
 
     ## if the user specified a minimum read length, discard shorter reads.
     ##print (df[df$len < minlen,])
@@ -284,7 +305,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
           breaks=seq(1,transcript$txLength(), 1)
           
     }
-    histdata <- hist(df$position, breaks=breaks, plot=F)
+    histdata <- hist(df$rposition, breaks=breaks, plot=F)
     maxy <- max(histdata$count)
 
     plot(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0], type='h',
@@ -356,6 +377,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     ## restore the graphical environment
     par(usr=usr)
     par(plt=plt)
+    invisible(df)
 }
 
 
@@ -363,15 +385,15 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
 #gene='NM_TEST'		# 'test'
 gene='NM_144903'	# Aldob '-'
 gene='NM_011434'	# 'Sod1'
-gene='NM_011044'	# 'Pck1'
 gene='NM_013541'	# 'Gstp1'
 gene='NM_001005419'	# 'Ado'  single exon '-'
 gene="NM_007409"   # ADH1
 gene="NR_029600"   # Mir122a   single exon '+'
 gene="NM_133862"    ## Fgg
-gene ="NM_009654" ## Alb
 gene='NM_016978'	# Oat '-'
 gene='NM_009790'    ## CALM1 - Calmodulin - no B-sheets
+gene ="NM_009654" ## Alb
+gene='NM_011044'	# 'Pck1'
 
 plot.new()
 
@@ -394,5 +416,5 @@ p = profile(df, kg[gene,])
 
 print(p)
 ##debug(plot.profile)
-plot(p, minlen=28)
+print(plot(p, minlen=28))
 
