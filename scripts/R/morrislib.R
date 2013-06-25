@@ -458,3 +458,56 @@ morris.normalize <- function(df,
     }
     return(x)
 }
+
+morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
+    result <- tryCatch({
+        drv <- dbDriver("MySQL")
+        if (is.null(group)) {
+            con <- dbConnect(drv, group="remote")
+            # con <- dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="localhost")
+        } else  {
+            con <- dbConnect(drv, group=group)
+        }
+        if (is.null(con)) {
+            stop(paste0("Could not connect to database: ", e$message));
+        }
+
+        ## SQL query for retrieving the per-gene alignment count of a single dataset.
+        ## These individual tables will be joined together based on the gene name
+        ## as a common key.   Oddly eough it is faster to do this in R than it is
+        ## in SQL.
+        query <- paste0("select feature,position,length from ",
+                        "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
+                        "where d.name like '", dataset, "%'")
+        if (!is.null(gene)) {
+            query <- paste0(query, " and a.feature in (", paste0("'",gene,"'", collapse=","), ")")
+        }
+        df <- dbGetQuery(con, query)
+        if (nrow(df) == 0) {
+            print(paste0("Error during database query: no data in dataset '", dataset,"'"))
+            print("Available datasets:")
+            print(morris.datasets(group));
+            stop("No Data");
+        }
+
+        query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
+                        "where d.name like '", dataset, "%'")
+        gf <- dbGetQuery(con, query)
+            if (nrow(df) == 0) {
+                print(paste0("Error during database query: no dataset named '", dataset,"'"))
+                print("Available datasets:")
+                print(morris.datasets(group))
+                stop("No Data")
+            }
+        attr(df, "genome") <- gf[1,1]
+        attr(df, "dataset") <- dataset
+    }, finally = {
+        if (exists("con")) 
+          dbDisconnect(con)
+        ##if (exists("drv")) 
+        ##  dbUnloadDriver(drv)
+    })
+
+    return(df)
+}
+
