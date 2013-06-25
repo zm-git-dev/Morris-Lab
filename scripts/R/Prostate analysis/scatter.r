@@ -1,10 +1,13 @@
 library(Biobase)
 require(genefilter)
 
+epithelial <- c("9530053A07Rik", "Tgm4", "Pbsn", "Rnase1", "Sbp")
+fibroblast <- c("Vim", "Itgb1", "Itga1", "Col1a1", "Col1a2")
 
-control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
-treated <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+/TR+")
-datasets <- c(control, treated)
+datasets <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+treated <- sample(datasets, length(datasets)/2)
+control <- setdiff(datasets, treated)
+
 
 ds = morris.genecounts(datasets, group=NULL)
 genome = attr(ds, "genome")
@@ -14,14 +17,13 @@ df = ds
 df = df[complete.cases(df),]
 
 ## Exclude genes that are highly expressed in epithelial genes.
-exclude = c("9530053A07Rik", "Tgm4", "Pbsn", "Rnase1", "Sbp")
 cn <- morris.commonnames(rownames(df), genome, NULL) 
-df = df[!(cn %in% exclude),]
+df = df[!(cn %in% epithelial),]
 
 ## Exclude genes that have too few reads.
-row.sub = apply(df[,grep("103112",names(df))], 1, function(row) (any(row >= 30)))
-row.sub = row.sub & apply(df[,grep("030713",names(df))], 1, function(row) any(row >= 50))
-row.sub = row.sub & apply(df[,grep("032513",names(df))], 1, function(row) any(row >= 100))
+row.sub = apply(df[,grep("103112",names(df),value=TRUE),drop = FALSE], 1, function(row) (any(row >= 30)))
+row.sub = row.sub & apply(df[,grep("030713",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 50))
+row.sub = row.sub & apply(df[,grep("032513",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 100))
 df = df[row.sub,]
 
 ## Normalize to mapped reads per million mapped reads
@@ -36,6 +38,9 @@ reference = df[match("Col1a2", cn),]
 ##	http://stackoverflow.com/questions/13830979/#13831155
 df <- sweep(df,2,as.numeric(reference), '/')
 
+## Save the refseq names of fibroblast genes that we will want to highlight
+hilite=names(cn[match(fibroblast,cn)])
+
 e=(df)
 m1=rowMeans(e[,control])
 m2=rowMeans(e[,treated])
@@ -43,10 +48,11 @@ plot(m1, m2, xlab="Control", ylab="Tramp+",log="xy")
 tstr = paste("control (", length(control), ") vs TRAMP+ (", length(treated), ")")
 title(tstr, sub="min=50,epithel excluded, rpm",cex.main=.7,
       cex.sub=.6, col.sub="grey73")
+points(m1[hilite,], m2[hilite,], pch=20, cex=1.4, col="red", log="xy")
 
-s1 = rowSds(e[,1:3])
-s2 = rowSds(e[,4:6])
-ttest=(m2-m1)/sqrt(s1^2/3+s2^2/3)
+s1 = rowSds(e[,control])
+s2 = rowSds(e[,treated])
+ttest=(m2-m1)/sqrt(s1^2/length(control)+s2^2/length(treated))
 hist(ttest,nclass=100)
 
 ## Calculate the two-tailed T-test statistic
