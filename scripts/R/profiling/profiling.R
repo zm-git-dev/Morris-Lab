@@ -2,57 +2,6 @@
 ##library(grid)
 
 
-morris.getalignments <- function(dataset, gene, group=NULL) {
-    result <- tryCatch({
-        drv <- dbDriver("MySQL")
-        if (is.null(group)) {
-            con <- dbConnect(drv, group="remote")
-            # con <- dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="localhost")
-        } else  {
-            con <- dbConnect(drv, group=group)
-        }
-        if (is.null(con)) {
-            stop(paste0("Could not connect to database: ", e$message));
-        }
-
-        ## SQL query for retrieving the per-gene alignment count of a single dataset.
-        ## These individual tables will be joined together based on the gene name
-        ## as a common key.   Oddly eough it is faster to do this in R than it is
-        ## in SQL.
-        query <- paste0("select feature,position,length from ",
-                        "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
-                        "where d.name like '", dataset, "%' and a.feature in (",
-                        paste0("'",gene,"'", collapse=","), ")")
-
-        df <- dbGetQuery(con, query)
-        if (nrow(df) == 0) {
-            print(paste0("Error during database query: no data in dataset '", dataset,"'"))
-            print("Available datasets:")
-            print(morris.datasets(group));
-            stop("No Data");
-        }
-
-        query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
-                        "where d.name like '", dataset, "%'")
-        gf <- dbGetQuery(con, query)
-            if (nrow(df) == 0) {
-                print(paste0("Error during database query: no dataset named '", dataset,"'"))
-                print("Available datasets:")
-                print(morris.datasets(group))
-                stop("No Data")
-            }
-        attr(df, "genome") <- gf[1,1]
-        attr(df, "dataset") <- dataset
-    }, finally = {
-        if (exists("con")) 
-          dbDisconnect(con)
-        ##if (exists("drv")) 
-        ##  dbUnloadDriver(drv)
-    })
-
-    return(df)
-}
-
 ## define S3 class 'transcript' to hold instances gene transcript info.
 ##
 ## generally not used directly but it used as part of the 'profile' class.
@@ -104,9 +53,12 @@ transcript = function(gdata) {
         return(pos)
     }
     rpos = function(pos) {
-        ## Given a position on a chromosome, the position within transcript is
-        ## equal to the sum of all exons that end before the
-        ## position, PLUS the beginning portion of the exon that contains the position.
+        ## Given a position on a chromosome, calculate the position
+        ## relative to the start of transcript.
+        ##
+        ## relative position is equal to the sum of all exons that end
+        ## before the position, PLUS the beginning portion of the exon
+        ## that contains the position.
 
         offset = 0
         ## there are two primary situations:
@@ -161,6 +113,14 @@ print.transcript <- function(this) {
 }
 
 ## specialization of generic plot function for instances of 'transcript' class.
+## produces a plot that looks something like this, 
+##
+##        -------|||||||||||||--------
+##
+## where the thin part (dashes) represents the 5'- and 3'-UTR, and the
+## thick part (vertical bars) represents the coding region of the
+## transcript.
+##
 plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
     if (units == "aa") {
         if (is.null(xlim)) 
@@ -216,18 +176,59 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
 ##    plot(p, minlen=28)
 ##
 profile <- function(df, gene.data) {
-    gene <- transcript(gene.data)
-    transcript <- function() gene
+    xsript <- transcript(gene.data)
+    transcript <- function() xsript
     alignments <- function() df
     rpositions <- function() {   # relative positions w.r.t. start of transcript
-        rpositions = sapply(X=df$position, FUN=gene$rpos)
+        rpositions = sapply(X=df$position, FUN=xsript$rpos)
+    }
+    plotpositions <- function(xlim=NULL, units="nucleotide", bias="middle", minlen=0) {
+        ## filtered plot positions
+        df <- alignments()
+        transcript <- transcript()
+        
+        ## Calculate the relative position of each alignment w.r.t. start of transcript.
+        ## position may be calculated with respect to the middle of the read or
+        ## the 5'-end
+        if (bias == "middle") 
+          df$rpositions = df$rpositions + df$length/2.0
+
+        ## if the user is zooming in on a portion of the transcript, set the
+        ## limits of the horizontal axis accordingly.   Otherwise the limits
+        ## are determined by the length of the transcript.
+        if (units == "aa") {
+            ## convert nucleotide positions to codon position
+            df$rposition = round((df$rposition - transcript$cdsStart())/3)
+        } 
+    
+        ## discard any alignments that fall outside the horizontal limits.
+        ## ( why?  won't the plot just truncate any data outside the range? )
+        if (!is.null(xlim)) {
+            is.between <- function(x,lim) {
+                (x > lim[1]) & (x < lim[2])
+            }
+            df <- df[is.between(df$rposition,xlim),]
+        }
+
+        ## if the user specified a minimum read length, discard shorter reads.
+        ##print (df[df$len < minlen,])
+        if (minlen < 0) 
+          df = df[df$len < -minlen,]
+        else
+          df = df[df$len >= minlen,]
+        
+        return(df)
     }
 
     ## precalculate the relative ribosome positions on the transcript.
     df$rpositions = rpositions()
     
     ## make a list of methods exported from instances of this class.
-    exported = list(transcript=transcript, alignments=alignments, rpositions=rpositions )
+    exported = list(
+      transcript=transcript,
+      alignments=alignments,
+      rpositions=rpositions,
+      plotpositions=plotpositions )
 
     ## turn into an S3 class by setting the class attribute.
     class(exported) <- "profile"
@@ -247,64 +248,38 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     usr = par()$usr
     plt = par()$plt
 
-    df <- self$alignments()
     transcript <- self$transcript()
-    
-    ## Calculate the relative position of each alignment w.r.t. start of transcript.
-    ## position may be calculated with respect to the middle of the read or
-    ## the 5'-end
-    if (bias == "middle") 
-        df$rpositions = df$rpositions + df$length/2.0
-
     ## if the user is zooming in on a portion of the transcript, set the
     ## limits of the horizontal axis accordingly.   Otherwise the limits
     ## are determined by the length of the transcript.
+    ## Calculate the histogram bins and maximum count across all bins.
+    ##
     complete = FALSE
     if (units == "aa") {
         if (is.null(xlim)) {
             complete = TRUE
             xlim = c(1, transcript$peptideLength())
         } 
-        ## convert nucleotide positions to codon position
-        df$rposition = round((df$rposition - transcript$cdsStart())/3)
+        breaks=seq(1, transcript$peptideLength(), 1)
     } else {
         if (is.null(xlim)) {
             complete = TRUE
             xlim <- c(1, transcript$txLength())
         }
-    }
-
-    
-    ## discard any alignments that fall outside the horizontal limits.
-    ## ( why?  won't the plot just truncate any data outside the range? )
-    is.between <- function(x,lim) {
-        (x > lim[1]) & (x < lim[2])
-    }
-    df <- df[is.between(df$rposition,xlim),]
-
-    ## if the user specified a minimum read length, discard shorter reads.
-    ##print (df[df$len < minlen,])
-    if (minlen < 0) 
-        df = df[df$len < -minlen,]
-    else
-        df = df[df$len >= minlen,]
-      
-    ## Draw the histogram in the top 2/3 of the plot area.
-    par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
-
-    ## Calculate the histogram bins and maximum count across all bins.
-    ##
-    if (units == "aa") {
         ## for small transcripts with few reads, use a bin size of one.
-        breaks=seq(1, transcript$peptideLength(), 1)
-    } else {
         ## otherwise use a bin size of three
         if ((xlim[2] - xlim[1]) > 100) 
           breaks=seq(1,transcript$txLength(), 3)
         else
           breaks=seq(1,transcript$txLength(), 1)
-          
     }
+
+    ## calculate the ribosome positions relative to start of transcript.
+    df <- self$plotpositions(xlim=xlim, units=units, bias=bias, minlen=minlen)
+    
+    ## Draw the histogram in the top 2/3 of the plot area.
+    par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
+
     histdata <- hist(df$rposition, breaks=breaks, plot=F)
     maxy <- max(histdata$count)
 
@@ -398,9 +373,6 @@ gene='NM_011044'	# 'Pck1'
 plot.new()
 
 df = morris.getalignments("113010_A", gene)
-
-##df <- data.frame(position=49557732, length=22)
-##attr(df,"genome") <- "mm9"
 
 kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
 ##kg <- data.frame(genome="mm9", name=c("gene1","gene2"), strand='+', txStart=1, txEnd=20,
