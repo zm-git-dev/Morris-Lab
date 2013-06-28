@@ -259,19 +259,23 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
         if (is.null(xlim)) {
             complete = TRUE
             xlim = c(1, transcript$peptideLength())
-        } 
-        breaks=seq(1, transcript$peptideLength(), 1)
+        } else if (length(xlim) == 1) {
+            xlim = c(xlim[1], transcript$peptideLength())
+        }
+        breaks=seq(xlim[1], xlim[2], 1)
     } else {
         if (is.null(xlim)) {
             complete = TRUE
             xlim <- c(1, transcript$txLength())
+        } else if (length(xlim) == 1) {
+            xlim = c(xlim[1], transcript$txLength())
         }
         ## for small transcripts with few reads, use a bin size of one.
         ## otherwise use a bin size of three
         if ((xlim[2] - xlim[1]) > 100) 
-          breaks=seq(1,transcript$txLength(), 3)
+          breaks=seq(xlim[1],xlim[2]+1, 3)
         else
-          breaks=seq(1,transcript$txLength(), 1)
+          breaks=seq(xlim[1],xlim[2], 1)
     }
 
     ## calculate the ribosome positions relative to start of transcript.
@@ -369,24 +373,20 @@ gene='NM_016978'	# Oat '-'
 gene='NM_009790'    ## CALM1 - Calmodulin - no B-sheets
 gene ="NM_009654" ## Alb
 gene='NM_011044'	# 'Pck1'
+gene='NM_016978'    # Oat '-'
+gene='NM_001005419'    # 'Ado'  single exon '-'
+gene="NM_007409"   # ADH1
+gene="NM_010321"  
 
 plot.new()
 
 df = morris.getalignments("113010_A", gene)
 
 kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
-##kg <- data.frame(genome="mm9", name=c("gene1","gene2"), strand='+', txStart=1, txEnd=20,
-##                 cdsStart=c(5,6), cdsEnd=c(8,9), exonCount=1, exonStarts="1,", exonEnds="20,",
-##                 name2=c("test","test2"),stringsAsFactors = F)
 rownames(kg) <- kg$name
-##print(kg[gene,])
-
-#df <- data.frame(position=c(49562310,49562310), length=22)
-#attr(df,"genome") <- "mm9"
 
 p = profile(df, kg[gene,])
 
 print(p)
-##debug(plot.profile)
 print(plot(p, minlen=28))
 
