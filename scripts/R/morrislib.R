@@ -33,28 +33,13 @@ morris.fetchData <- function(datasets, group=NULL) {
             stop(paste0("Could not connect to database: ", e$message));
         }
 
-        getGenome <- function(dataset) {
-            ## SQL query for retrieving the genome of each experiment.
-            query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
-                     "where d.name like '", dataset, "%'")
-            df <- dbGetQuery(con, query)
-            if (nrow(df) == 0) {
-                print(paste0("Error during database query: no dataset named '", dataset,"'"))
-                print("Available datasets:")
-                print(morris.datasets(group))
-                stop("No Data")
-            }
-            return(df)
-        }
-
         ## retrieve the genome name for each experiment listed in datasets.
-        gs <- lapply(datasets, getGenome)
-        gf = Reduce(function(...) merge(..., all=T, suffixes=c("", ".2")), gs)
+        gs <- morris.getGenome(datasets)
 
         ## check to see that each experiment has the same genome!
         ## ( it won't be useful to compare datasets aligned with different genomes. )
         ##
-        if (nrow(unique(t(gf[1,]))) != 1) {
+        if (length(unique(gs)) != 1) {
             print(paste0("Error during database query: not all selected datasets align to the same genome"))
             print("Selected genomes:")
             print(gs)
@@ -64,7 +49,7 @@ morris.fetchData <- function(datasets, group=NULL) {
         ## If we get here we know all datasets used the same genome so just pick the first one.
         ## This genome will be added as an attribute of the dataframe returns from this function.
         ## (useful when retrieving a set of knowngenes to go with this dataframe.)
-        genome=gf[1,1]
+        genome=unique(gs)
         
         f <- function(dataset) {
             ## SQL query for retrieving the per-gene alignment count of a single dataset.
@@ -367,7 +352,8 @@ morris.genecounts <- function(datasets, group=NULL) {
 ## Retrieve the list of known refseq genes from the database.
 ##
 morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
-
+    stopifnot(!is.null(genome))
+    
     # SQL query for retrieving the knowngene list.  The proper genome is selected from
     # the first dataset.
     kquery <- paste0("select * from knowngenes2 k ",
@@ -381,7 +367,6 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
         drv <- dbDriver("MySQL")
         if (is.null(group)) {
             con <- dbConnect(drv, group="remote")
-            # con <- dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="localhost")
         } else  {
             con <- dbConnect(drv, group=group)
         }
@@ -397,7 +382,6 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
         kg <- kg[!duplicated(kg$name),]
         fun <- function(x,y) {sum(as.numeric(y)-as.numeric(x))}
         kg$exonLen <- mapply(fun, strsplit(kg$exonStarts,","), strsplit(kg$exonEnds,","))
-
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
@@ -432,8 +416,10 @@ morris.normalize <- function(df,
 
         ## sapply gives a matrix.
         ## lapply would return a list of lists (not useful here)
-        #tmp <- sapply(N,function(n) {return(n*L)})
-        tmp = (N*L)
+        ## as tempting as it might be, do NOT replace this with,
+        ## tmp = (N*L)
+        ## that does not work if the dataframe has multiple datasets in it.
+        tmp <- sapply(N,function(n) {return(n*L)})
         tmp <- (10^9)/tmp
         x <- C*tmp
         
@@ -460,16 +446,34 @@ morris.normalize <- function(df,
 }
 
 morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
+    ## this routine operates only on ONE dataset name - NOT a vector!
+    stopifnot(length(dataset) == 1)
+
     result <- tryCatch({
         drv <- dbDriver("MySQL")
         if (is.null(group)) {
             con <- dbConnect(drv, group="remote")
-            # con <- dbConnect(drv, user="readonly", password="readonly", dbname="morris", host="localhost")
         } else  {
             con <- dbConnect(drv, group=group)
         }
         if (is.null(con)) {
             stop(paste0("Could not connect to database: ", e$message));
+        }
+
+        ## check to see that each experiment has the same genome!
+        ## it won't be useful to compare datasets aligned with different genomes. 
+        ## ( actually this routine only works with a single dataset, so really there is no
+        ##   need to consolidate the results from multiple datasets. )
+        gs <- morris.getGenome(datasets)
+        genome <- unique(gs)
+        if (length(genome) == 0) {
+            print(paste0("Error during database query: no dataset found with the name ", paste0(datasets, collapse=", ")))
+            stop("No Data")
+        } else if (length(genome) != 1) {
+            print(paste0("Error during database query: not all selected datasets align to the same genome"))
+            print("Selected genomes:")
+            print(gs)
+            stop("No Data")
         }
 
         ## SQL query for retrieving the per-gene alignment count of a single dataset.
@@ -484,22 +488,13 @@ morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
         }
         df <- dbGetQuery(con, query)
         if (nrow(df) == 0) {
-            print(paste0("Error during database query: no data in dataset '", dataset,"'"))
+            print(paste0("Error during database query: no alignments in dataset '", dataset,"' for gene(s) ", paste0(gene, collapse=",")))
             print("Available datasets:")
             print(morris.datasets(group));
             stop("No Data");
         }
 
-        query <- paste0("select genome as '", dataset,"' from datasets_tbl d ",
-                        "where d.name like '", dataset, "%'")
-        gf <- dbGetQuery(con, query)
-            if (nrow(df) == 0) {
-                print(paste0("Error during database query: no dataset named '", dataset,"'"))
-                print("Available datasets:")
-                print(morris.datasets(group))
-                stop("No Data")
-            }
-        attr(df, "genome") <- gf[1,1]
+        attr(df, "genome") <- genome
         attr(df, "dataset") <- dataset
     }, finally = {
         if (exists("con")) 
@@ -511,3 +506,42 @@ morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
     return(df)
 }
 
+
+## Retrieve the genome used to align a setset (or datasets)
+## This routine take a list of datasets or a single dataset string
+## and returns a list of strings (or single string) representing the
+## genome used to align this dataset.
+## e.g. morris.getGenome("110313_A") => "hg18"
+##      morris.getGenome(c("110313_A", "103113_B")) => ("hg18", "mm9")
+##
+morris.getGenome <- function(dataset, group=NULL) {
+    df <- NULL
+    result <- tryCatch({
+        drv <- dbDriver("MySQL")
+        if (is.null(group)) {
+            con <- dbConnect(drv, group="remote")
+        } else  {
+            con <- dbConnect(drv, group=group)
+        }
+        if (is.null(con)) {
+            stop(paste0("Could not connect to database: ", e$message));
+        }
+
+        ## SQL query for retrieving the genome of each experiment.
+        query <- paste0("select genome from datasets_tbl d ",
+                        "where ",
+                        paste0("name like '", dataset, "%'", collapse=" or "))
+        print(query)
+        df <- dbGetQuery(con, query)
+    }, finally = {
+        if (exists("con")) 
+          dbDisconnect(con)
+        ##if (exists("drv")) 
+        ##  dbUnloadDriver(drv)
+    })
+    print(df)
+    if (ncol(df))
+      return(df[,1])
+    else
+      return(NULL)
+}
