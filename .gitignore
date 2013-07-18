@@ -4,4 +4,8 @@
 *~
 *.jpeg
 *.fa
+*.fai
+*.ebwt
+*.genome
 *.csv
+
