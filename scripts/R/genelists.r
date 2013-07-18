@@ -67,6 +67,9 @@ if (opt$options$list) {
         df <- subset(df, select=-c(Row.names) )
     }
 
+    ## Now remove the entries identified earlier that do not have
+    ## proper read depth.
+    ##
     if (!is.na(row.sub))
       df <- df[row.sub,, drop=FALSE]
     
@@ -76,8 +79,6 @@ if (opt$options$list) {
     ## rearrange the columns to move the last column (common name) to the second column
     ## this is a little tricky b/c number of cols in df is variable.
     df <- df[c(ncol(df), 1:(ncol(df)-1))]
-
-
 
     options("scipen"=100, "digits"=4)
     print(df)
