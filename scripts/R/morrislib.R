@@ -6,6 +6,10 @@ library(preprocessCore)
 suppressMessages( require(maptools) )
 suppressMessages( library(plotrix) )
 
+options(deparse.max.lines=30)
+options(max.print=30)
+## options(error = quote({dump.frames(to.file=TRUE); q()}))
+
 
 ## fetchData - retrieve a dataframe containing the data we are interested in comparing.
 ## in this case we are retrieving the data from a sql database.
@@ -112,6 +116,43 @@ morris.commonnames <- function(refseq, genome, group=NULL) {
     return (tmp)
 
 }
+
+## Fetch pretty much all the available information about a group of
+## datasets.  This routine builds a dataframe from a combination of
+## the datasets_tbl and the experiments_tbl.
+##
+morris.fetchinfo <- function(datasets, group=NULL) {
+    query = paste0("SELECT e.name as 'experiment',d.name as 'dataset',",
+                   "       e.subjectID,e.organism,e.age,e.description,",
+                   "       e.tissue,e.genotype ",
+                   "FROM morris.datasets_tbl d ",
+                   "JOIN experiments_tbl e ON d.expr_id = e.id where ",
+                   paste0("d.name like '", datasets, "%'", collapse=" or "))
+    result <- tryCatch({
+        drv <- dbDriver("MySQL")
+        if (is.null(group)) {
+            con <- dbConnect(drv, group="remote")
+        } else  {
+            con <- dbConnect(drv, group=group)
+        }
+        if (is.null(con)) {
+            stop(paste0("Could not connect to database: ", e$message));
+        }
+
+        df <- dbGetQuery(con, query)
+        rownames(df) <- df[,'dataset']
+        df <- subset(df, select=-c(dataset) )
+        print(df)
+    }, finally = {
+        if (exists("con")) 
+          dbDisconnect(con)
+        ##if (exists("drv")) 
+        ##  dbUnloadDriver(drv)
+    })
+    return(df)
+}
+
+
 
 ## fetch descriptions of datasets from the mysql dtabase.
 ##
@@ -396,10 +437,11 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
 morris.normalize <- function(df, 
                              normalization=c("rpm", "scaled", "quantile", "rpkm"),
                              group=NULL) {
-    
+    stopifnot(!is.null(attr(df, "genome")))
     ## normalize to total reads in each experiment.
     normalization <- match.arg(normalization)
     df.cols <- sapply(df, is.numeric)  #select numeric variables
+
     if (normalization == "rpkm") {
 
         ## FPKM = 10e9 * C / (N * L)
@@ -422,13 +464,18 @@ morris.normalize <- function(df,
         tmp <- sapply(N,function(n) {return(n*L)})
         tmp <- (10^9)/tmp
         x <- C*tmp
-        
     } else if (normalization == "rpm") {
+
         N <- colSums(df[df.cols], na.rm = TRUE)
         C <- df[df.cols]
         
         x <- C/(N/(10^6))
-      
+
+        ## here is an alternative technique....
+        ## Normalize to mapped reads per million mapped reads
+        ##  http://stackoverflow.com/questions/13830979/#13831155
+        ## df = sweep(df,2,(colSums(df)/(10^6)), '/')
+        
     } else if (normalization == "scaled") {
         N <- colSums(df[df.cols], na.rm = TRUE)
         C <- df[df.cols]
@@ -464,10 +511,10 @@ morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
         ## it won't be useful to compare datasets aligned with different genomes. 
         ## ( actually this routine only works with a single dataset, so really there is no
         ##   need to consolidate the results from multiple datasets. )
-        gs <- morris.getGenome(datasets)
+        gs <- morris.getGenome(dataset)
         genome <- unique(gs)
         if (length(genome) == 0) {
-            print(paste0("Error during database query: no dataset found with the name ", paste0(datasets, collapse=", ")))
+            print(paste0("Error during database query: no dataset found with the name ", paste0(dataset, collapse=", ")))
             stop("No Data")
         } else if (length(genome) != 1) {
             print(paste0("Error during database query: not all selected datasets align to the same genome"))
@@ -528,10 +575,9 @@ morris.getGenome <- function(dataset, group=NULL) {
         }
 
         ## SQL query for retrieving the genome of each experiment.
-        query <- paste0("select genome from datasets_tbl d ",
+        query <- paste0("select name,genome from datasets_tbl d ",
                         "where ",
                         paste0("name like '", dataset, "%'", collapse=" or "))
-        print(query)
         df <- dbGetQuery(con, query)
     }, finally = {
         if (exists("con")) 
@@ -539,9 +585,9 @@ morris.getGenome <- function(dataset, group=NULL) {
         ##if (exists("drv")) 
         ##  dbUnloadDriver(drv)
     })
-    print(df)
+    x = pmatch(dataset, df[,1])
     if (ncol(df))
-      return(df[,1])
+      return(df[x,2])
     else
       return(NULL)
 }
