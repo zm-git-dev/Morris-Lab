@@ -59,8 +59,9 @@ xlim=c(min(m1), max(m1))
 ylim=c(min(m2), max(m2))
 plot(m1[rows.neither], m2[rows.neither], xlab="Control", ylab="Tramp+",
      cex=.7, xlim=xlim, ylim=ylim)
-tstr = paste("control (", length(control), ") vs TRAMP+ (", length(treated), ")")
-title(tstr, sub="min=50, rpm",cex.main=.7, cex.sub=1, col.sub="grey73")
+tstr = paste("Prostate Control (", length(control), ") vs TRAMP+ (", length(treated), ")")
+ststr = "prostate Analysis/scatter.R, rpm,  norm(Col1a2), mean vs. mean"
+title(tstr, sub=ststr, cex.main=1, cex.sub=1, col.sub="grey73")
     
 points(m1[rows.epithelial], m2[rows.epithelial], pch=18, cex=1, col="red")
 points(m1[rows.fibroblast], m2[rows.fibroblast], pch=17, cex=1, col="blue")
