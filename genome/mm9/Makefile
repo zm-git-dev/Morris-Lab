@@ -42,8 +42,8 @@ property.txt: Makefile
 	echo "fastaDirectory=true" >>$@
 	echo "fastaFiles=$(subst $(space),$(comma),${chr_fa})" >>$@
 	echo "ordered=false" >>$@
-	echo "id=hg18_local" >>$@
-	echo "name=hg18 local" >>$@
+	echo "id=${GENOME}_local" >>$@
+	echo "name=${GENOME} local" >>$@
 	echo "geneTrackName=RefSeq genes" >>$@
 	echo "geneFile=refGene.txt" >>$@
 	echo "cytobandFile=cytoBand.txt" >>$@
