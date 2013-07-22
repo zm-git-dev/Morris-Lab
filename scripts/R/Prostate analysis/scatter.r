@@ -4,51 +4,72 @@ require(genefilter)
 epithelial <- c("9530053A07Rik", "Tgm4", "Pbsn", "Rnase1", "Sbp")
 fibroblast <- c("Vim", "Itgb1", "Itga1", "Col1a1", "Col1a2")
 
-datasets <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
-treated <- sample(datasets, length(datasets)/2)
-control <- setdiff(datasets, treated)
+# divide the data into two sets - control and treated...
+treated <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+/TR+")
+control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+datasets <- c(treated,control)
+df = morris.genecounts(datasets, group=NULL)
+genome = attr(df, "genome")
 
+## Get rid of any rows that are missing data...
+## Hmmmmm.   Maybe should keep those and just set them to zero?
+##
+df[is.na(df)] <- 0
+##df = df[complete.cases(df),]
 
-ds = morris.genecounts(datasets, group=NULL)
-genome = attr(ds, "genome")
-
-df = ds
-## Get rid of any rows containing NA.
-df = df[complete.cases(df),]
-
-## Exclude genes that are highly expressed in epithelial genes.
-cn <- morris.commonnames(rownames(df), genome, NULL) 
-df = df[!(cn %in% epithelial),]
-
-## Exclude genes that have too few reads.
+## Identify genes that have too few reads.
 row.sub = apply(df[,grep("103112",names(df),value=TRUE),drop = FALSE], 1, function(row) (any(row >= 30)))
 row.sub = row.sub & apply(df[,grep("030713",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 50))
 row.sub = row.sub & apply(df[,grep("032513",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 100))
-df = df[row.sub,]
 
-## Normalize to mapped reads per million mapped reads
-##  http://stackoverflow.com/questions/13830979/#13831155
-df = sweep(df,2,(colSums(df)/(10^6)), '/')
+cn <- morris.commonnames(rownames(df), genome, NULL) 
+stopifnot(nrow(df)==nrow(cn))
+stopifnot(rownames(df)==rownames(cn))
 
 ## scale all RPM count to the RPM count of Col1a2
 ## 	First lookup the values for Col1a2
-cn <- morris.commonnames(rownames(df), genome, NULL) 
-reference = df[match("Col1a2", cn),]
+reference = df[match("Col1a2", cn$common),]
+stopifnot(!any(is.na(reference)))
+
 ##	Now divide each column in each row by to corresponding column of the reference.
 ##	http://stackoverflow.com/questions/13830979/#13831155
 df <- sweep(df,2,as.numeric(reference), '/')
 
-## Save the refseq names of fibroblast genes that we will want to highlight
-hilite=names(cn[match(fibroblast,cn)])
+## Normalize to mapped reads per million mapped reads
+attr(df,"genome") = genome
+df = morris.normalize(df, normalization="rpm")
 
-e=(df)
-m1=rowMeans(e[,control])
-m2=rowMeans(e[,treated])
-plot(m1, m2, xlab="Control", ylab="Tramp+",log="xy")
+## Exclude genes that have too few reads.
+df = df[row.sub,,drop=FALSE]
+cn = cn[row.sub,,drop=FALSE]
+
+## Save the refseq names of fibroblast genes that we will want to highlight
+rows.epithelial=rownames(cn)[cn$common %in% epithelial]
+rows.fibroblast=rownames(cn)[cn$common %in% fibroblast]
+rows.neither=rownames(cn)[!cn$common %in% c(fibroblast, epithelial)]
+    
+m1=rowMeans(df[,control])
+m2=rowMeans(df[,treated])
+
+xlim=c(min(m1), max(m1))
+ylim=c(min(m2), max(m2))
+plot(m1, m2, xlab="Control", ylab="Tramp+",log="xy",cex=.8)
+plot(m1[rows.neither], m2[rows.neither], xlab="Control", ylab="Tramp+",log="xy",cex=.7,
+     xlim=xlim, ylim=ylim)
 tstr = paste("control (", length(control), ") vs TRAMP+ (", length(treated), ")")
-title(tstr, sub="min=50,epithel excluded, rpm",cex.main=.7,
-      cex.sub=.6, col.sub="grey73")
-points(m1[hilite,], m2[hilite,], pch=20, cex=1.4, col="red", log="xy")
+title(tstr, sub="min=50, rpm",cex.main=.7, cex.sub=1, col.sub="grey73")
+    
+points(m1[rows.epithelial], m2[rows.epithelial], pch=18, cex=1, col="red")
+points(m1[rows.fibroblast], m2[rows.fibroblast], pch=17, cex=1, col="blue")
+
+
+repeat {
+    ans <- identify(m1, m2, n=1, plot=FALSE)
+    if(!length(ans)) break
+    print(paste0("(",m1[ans], ",", m2[ans],")  ",rownames(cn)[ans]," ", cn[ans,]))
+}
+
+
 
 s1 = rowSds(e[,control])
 s2 = rowSds(e[,treated])
