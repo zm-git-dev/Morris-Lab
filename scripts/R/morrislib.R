@@ -3,7 +3,7 @@ suppressMessages( library(calibrate) )
 suppressMessages( library(affy) )
 library(preprocessCore)
 
-suppressMessages( require(maptools) )
+##suppressMessages( require(maptools) )
 suppressMessages( library(plotrix) )
 
 options(deparse.max.lines=30)
@@ -44,10 +44,8 @@ morris.fetchData <- function(datasets, group=NULL) {
         ## ( it won't be useful to compare datasets aligned with different genomes. )
         ##
         if (length(unique(gs)) != 1) {
-            print(paste0("Error during database query: not all selected datasets align to the same genome"))
-            print("Selected genomes:")
-            print(gs)
-            stop("No Data")
+            stop(paste0("not all selected datasets align to the same genome\n"),
+                 "Selected genomes:\n", as.character(gs))
         }
 
         ## If we get here we know all datasets used the same genome so just pick the first one.
@@ -65,10 +63,9 @@ morris.fetchData <- function(datasets, group=NULL) {
                             "where d.name like '", dataset, "%' group by feature")
             df <- dbGetQuery(con, query)
             if (nrow(df) == 0) {
-                print(paste0("Error during database query: no data in dataset '", dataset,"'"))
-                print("Available datasets:")
-                print(morris.datasets(group))
-                stop("No Data")
+                stop(paste0("no data in dataset '", dataset,"'\n"),
+                     "Available datasets:\n",
+                     as.character(morris.datasets(group)), call.=TRUE)
             }
             return(df)
         }
@@ -106,14 +103,17 @@ morris.commonnames <- function(refseq, genome, group=NULL) {
     ##
     kg <- morris.getknowngenes(genome, group=group)
 
+    cn = data.frame(refseq, row.names=1)
+
     ## match the refseq names with the common names, using the refseq names as a key
-    tmp = kg$name2[match(refseq, kg$name)]
+    cn$common = kg$name2[match(refseq, kg$name)]
 
     ## Some refseq names don't have corresponding common names.
     ## For those, reuse the refeseq names as the common name.
-    tmp[is.na(tmp)] = refseq[is.na(tmp)]
+    rows.na = is.na(cn$common)
+    cn$common[rows.na] = refseq[rows.na]
 
-    return (tmp)
+    return (cn)
 
 }
 
@@ -341,9 +341,9 @@ morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NUL
 
     ## a query to find experiments that use a certain organism, tissue, or genotype.
     query.experiments <- "select id from experiments_tbl"
-    selects <- c( ifelse(!is.null(organism),  paste0("organism like '", organism, "'"), NA),
+    selects <- c( ifelse(!is.null(organism),  paste0("organism = '", organism, "'"), NA),
                   ifelse(!is.null(tissue),  paste0("tissue like '", tissue, "'"), NA),
-                  ifelse(!is.null(genotype),  paste0("genotype like '", genotype, "'"), NA) )
+                  ifelse(!is.null(genotype),  paste0("genotype = '", genotype, "'"), NA) )
     if (any(!is.na(selects))) 
         query.experiments = paste( query.experiments, "where", paste(selects[!is.na(selects)], collapse=" and "))
 
@@ -351,13 +351,12 @@ morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NUL
     query <- paste("select d.name from (", query.alignments, ") d",
                    "join (", query.experiments, ") e",
                    "ON d.expr_id = e.id")
+
+    if (is.null(group)) 
+        group="remote"
+
     result <- tryCatch({
-        drv <- dbDriver("MySQL")
-        if (is.null(group)) {
-            con <- dbConnect(drv, group="remote")
-        } else  {
-            con <- dbConnect(drv, group=group)
-        }
+        con <- dbConnect(dbDriver("MySQL"), group=group)
         df <- dbGetQuery(con, query)
     }, warning = function(w) {
         print(w$message)
@@ -367,8 +366,6 @@ morris.datasets <- function(group=NULL, organism=NULL, tissue=NULL, genotype=NUL
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
-        ##if (exists("drv")) 
-        ##  dbUnloadDriver(drv)
     })
 
     return (df$name);
@@ -466,21 +463,21 @@ morris.normalize <- function(df,
         x <- C*tmp
     } else if (normalization == "rpm") {
 
-        N <- colSums(df[df.cols], na.rm = TRUE)
-        C <- df[df.cols]
-        
-        x <- C/(N/(10^6))
-
-        ## here is an alternative technique....
         ## Normalize to mapped reads per million mapped reads
         ##  http://stackoverflow.com/questions/13830979/#13831155
-        ## df = sweep(df,2,(colSums(df)/(10^6)), '/')
+        C <- df[df.cols]
+        N <- colSums(C, na.rm = TRUE)
+
+        ## x = scale(C, center=FALSE, scale=colSums(C)/(10^6)
+        x = sweep(C,2,colSums(C)/(10^6),`/`)
         
     } else if (normalization == "scaled") {
-        N <- colSums(df[df.cols], na.rm = TRUE)
         C <- df[df.cols]
+        N <- colSums(C, na.rm = TRUE)
 
-        x <- C/N
+        ## here is an alternative technique....
+        ## df = sweep(df,2,(colSums(df)/(10^6)), '/')
+        x = sweep(C,2,colSums(C),`/`)
 
     } else if (normalization == "quantile") {
         
