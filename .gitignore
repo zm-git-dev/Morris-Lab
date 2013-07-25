@@ -8,4 +8,18 @@
 *.ebwt
 *.genome
 *.csv
+*/.DS_Store
+analysis/*
+*.pdf
+*.Rd
+genome/mm9/property.txt
+genome/hg18/property.txt
+genome/hg18/test/*
+genome/hg18/hg18_refseq_knowngenes.txt
+genome/mm9/mm9_refseq_knowngenes.txt
+genome/hg18/cytoBand.txt
+genome/mm9/cytoBand.txt
+genome/hg18/refGene.txt
+genome/mm9/refGene.txt
 
+scripts/R/test.R
