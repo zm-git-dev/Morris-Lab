@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Session genome="mm9_rrna" locus="45S:3900-13220" version="4">
+    <Resources>
+        <Resource path="/Volumes/morrislab/analysis/103112/103112_B/sample.bam"/>
+        <Resource path="/Volumes/morrislab/analysis/103112/103112_A/sample.bam"/>
+        <Resource path="/Volumes/morrislab/analysis/030713/030713_A/sample.bam"/>
+        <Resource path="/Volumes/morrislab/analysis/030713/030713_B/sample.bam"/>
+    </Resources>
+    <Panel height="47" name="Panel1362782255389" width="1356">
+        <Track altColor="0,0,178" autoScale="true" color="175,175,175" colorScale="ContinuousColorScale;0.0;16440.0;255,255,255;175,175,175" displayMode="EXPANDED" featureVisibilityWindow="-1" fontSize="10" id="/Volumes/morrislab/analysis/030713/030713_A/sample.bam_coverage" name="030713_A" showDataRange="true" visible="true">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="16440.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+    </Panel>
+    <Panel height="49" name="Panel1362782306043" width="1356">
+        <Track altColor="0,0,178" autoScale="true" color="175,175,175" colorScale="ContinuousColorScale;0.0;10721.0;255,255,255;175,175,175" displayMode="EXPANDED" featureVisibilityWindow="-1" fontSize="10" id="/Volumes/morrislab/analysis/030713/030713_B/sample.bam_coverage" name="030713_B" showDataRange="true" visible="true">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="10721.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+    </Panel>
+    <Panel height="49" name="Panel1362782358368" width="1356">
+        <Track altColor="0,0,178" autoScale="true" color="175,175,175" colorScale="ContinuousColorScale;0.0;2983.0;255,255,255;175,175,175" displayMode="EXPANDED" featureVisibilityWindow="-1" fontSize="10" id="/Volumes/morrislab/analysis/103112/103112_A/sample.bam_coverage" name="103112_A" showDataRange="true" visible="true">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="2983.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+    </Panel>
+    <Panel height="434" name="Panel1362782410158" width="1356">
+        <Track altColor="0,0,178" autoScale="true" color="175,175,175" colorScale="ContinuousColorScale;0.0;5120.0;255,255,255;175,175,175" displayMode="EXPANDED" featureVisibilityWindow="-1" fontSize="10" id="/Volumes/morrislab/analysis/103112/103112_B/sample.bam_coverage" name="103112_B" showDataRange="true" visible="true">
+            <DataRange baseline="0.0" drawBaseline="true" flipAxis="false" maximum="5120.0" minimum="0.0" type="LINEAR"/>
+        </Track>
+    </Panel>
+    <Panel height="56" name="FeaturePanel" width="1356">
+        <Track altColor="0,0,178" color="0,0,178" displayMode="EXPANDED" featureVisibilityWindow="-1" fontSize="10" id="Reference sequence" name="Reference sequence" showDataRange="true" sortable="false" visible="true"/>
+    </Panel>
+    <PanelLayout dividerFractions="0.009009009009009009,0.08708708708708708,0.16816816816816818,0.24924924924924924,0.9084084084084084"/>
+</Session>
