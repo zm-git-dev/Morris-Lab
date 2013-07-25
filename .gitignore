@@ -23,3 +23,5 @@ genome/hg18/refGene.txt
 genome/mm9/refGene.txt
 
 scripts/R/test.R
+
+.DS_Store
