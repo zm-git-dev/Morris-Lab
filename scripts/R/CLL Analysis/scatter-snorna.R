@@ -17,7 +17,7 @@ df <- morris.genecounts(datasets, group=NULL)
 genome <- attr(df, "genome")
 
 ## Get rid of any rows containing NA.
-#df <- df[complete.cases(df),]
+df[is.na(df)] <- 0
 
 ## Identify entries that do not have proper read depth, but don't
 ## eliminate them yet.  Some normalization methods rely upon
@@ -31,30 +31,37 @@ if (!is.na(mincount)) {
 }
 
 ## Normalize to mapped reads per million mapped reads
-df <- morris.normalize(df, norm)
+df.norm <- morris.normalize(df, norm)
 
 ## Now remove the entries identified earlier that do not have
 ## proper read depth.
 ##
 if (!is.na(row.sub))
-    df <- df[row.sub,, drop=FALSE]
+    df.norm <- df.norm[row.sub,, drop=FALSE]
 
-## ## Save the refseq names of fibroblast genes that we will want to highlight
-## hilite=names(cn[match(fibroblast,cn)])
+## Save the refseq names of  genes that we will want to highlight
 kg = morris.getknowngenes(genome)
-sno = grep("SNOR", kg$name2)
-notsno = grep("SNOR", kg$name2, invert=TRUE)
+rownames(kg) <- kg$name
+snorna = kg$name[grep("SNOR", kg$name2)]
 
-m = df[match(kg$name[notsno], rownames(df)),]
-m1=m[, control]
-m2=m[, treated]
-plot(m1, m2, xlab=paste0(control, collapse="-"),
-     ylab=paste0(treated, collapse="-"),log="xy", pch=16, cex=0.7)
+m1 = log2(apply(df.norm[,control,drop=FALSE], 1, mean))
+m2 = log2(apply(df.norm[,treated,drop=FALSE], 1, mean))
 
-m = df[match(kg$name[sno], rownames(df)),]
-m1=m[, control]
-m2=m[, treated]
-points(m1, m2,col='blue', pch=17, cex=1)
+xlim=c(min(m1), max(m1))
+ylim=c(min(m2), max(m2))
+
+plot(m1[!(rownames(df.norm) %in% snorna)], m2[!(rownames(df.norm) %in% snorna)],
+     xlab=paste0(control, collapse="-"), ylab=paste0(treated, collapse="-"),
+     xlim=xlim, ylim=ylim, pch=16, cex=0.7)
+
+points(m1[rownames(df.norm) %in% snorna], m2[rownames(df.norm) %in% snorna], col='blue', pch=17, cex=1)
+
+repeat {
+    ans <- identify(m1, m2, n=1, plot=FALSE)
+    if(!length(ans)) break
+    print(paste0("(",m1[ans], ",", m2[ans],")  ",rownames(df.norm)[ans]," ", kg[rownames(df.norm)[ans],"name2"]))
+}
+
 
 descriptions = morris.fetchdesc(datasets, group=group)
 tstr = paste0(descriptions[,1], collapse="\n vs. ")
