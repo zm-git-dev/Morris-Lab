@@ -432,7 +432,7 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
 
 
 morris.normalize <- function(df, 
-                             normalization=c("rpm", "scaled", "quantile", "rpkm"),
+                             normalization=c("TC", "rpm", "scaled", "quantile", "rpkm"),
                              group=NULL) {
     stopifnot(!is.null(attr(df, "genome")))
     ## normalize to total reads in each experiment.
@@ -485,6 +485,19 @@ morris.normalize <- function(df,
         names(x) <- datasets
         rownames(x) <- rownames(df)
     
+    } else if (normalization == "TC") {  
+        ## Total Count
+        ## Gene counts are divided by the total number of mapped reads
+        ## (or library size) associated with their lane and multiplied
+        ## by the mean total count across all the samples of the
+        ## dataset.
+        C <- df[df.cols]
+        N <- colSums(C, na.rm = TRUE)
+
+        ## here is an alternative technique....
+        ## df = sweep(df,2,(colSums(df)/(10^6)), '/')
+        C = sweep(C,2,N,`/`)
+        x = sweep(C,2,mean(N),`*`)
     }
     return(x)
 }
