@@ -24,3 +24,4 @@ genome/mm9/refGene.txt
 
 *.sam
 
+*.gz
