@@ -131,7 +131,7 @@ plot.transcript <- function(self, xlim=NULL, units="nucleotide") {
           xlim <- c(1, self$txLength())
     }
     
-    cdsHeight = 10   # height of coding region, expressed as percentage of plot height
+    cdsHeight = 5   # height of coding region, expressed as percentage of plot height
     if (self$isCoding()) {
         ## Label the endpoints of the coding region and place the gene
         ## name in the middle of the coding region.
@@ -305,7 +305,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     # again before positioning the labels.
     tmp = par("usr")
     text(xlim[1], tmp[4], attr(df, "dataset"), adj=c(0,1.2), new=TRUE)
-    text(xlim[2], tmp[4], paste0(nrow(df), " total reads"), adj = c( 1, 1.2 ), new=TRUE)
+    text(xlim[2], tmp[4], paste0(nrow(df), " reads"), adj = c( 1, 1.2 ), new=TRUE)
 
     ## start a new plot without clearing the current one.
     ## I don't understand why this is necessary but without it the plots don't work.
@@ -314,7 +314,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
 
     ## Draw the transcript in the lower 1/3 of the plot area
     ## plt(x1, x2, y1, y2)
-    par(plt=c(plt[1], plt[2], plt[3], plt[3]+(plt[4]-plt[3])/3))
+    par(plt=c(plt[1], plt[2], plt[3], plt[3]+(plt[4]-plt[3])/4))
 
     ## usr(x1, x2, y1, y2)
     par(usr=c(tmp[1], tmp[2], 0, 100))
@@ -330,7 +330,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     legend=paste(legend,"bias=",paste0("\"", bias, "\""))
     legend=paste(legend,"minlen=",minlen)
     
-    text(tmp[1], 0, legend, adj=c(0,-1), col="grey56")
+    ##text(tmp[1], 0, legend, adj=c(0,-1), col="grey56")
     
     par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
     par(usr=tmp)
