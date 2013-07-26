@@ -24,4 +24,7 @@ genome/mm9/refGene.txt
 
 *.sam
 
+
 *.gz
+
+scripts/R/test.R
