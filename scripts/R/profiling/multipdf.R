@@ -1,4 +1,5 @@
-
+source("../morrislib.R")
+source("profiling.R")
 
 datasets= c("061113_A", "061113_B", "061113_C", "061113_D")
 genome <- morris.getGenome(dataset[1])
@@ -13,6 +14,10 @@ profiles <- list(
     EEF1A1 = list(c()),
     EIF4EBP2 = list(c())
     
+)
+
+profiles <- list(
+    RPS23 = list(c())
 )
 
 main <- function() {
@@ -34,8 +39,6 @@ main <- function() {
             ribo.profile = profile(df, kg[refseq,])
             print(paste0(refseq,":", ribo.profile$transcript()$name2()))
             for (x in profiles[[gene]]) {
-                xlim=as.numeric(x)
-
                 ## set the margin to give a more pleasing layout.
                 ##     c(bottom, left, top, right) gives the number of
                 ##     lines of margin to be specified on the four sides of the plot
