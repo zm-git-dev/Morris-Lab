@@ -1,4 +1,4 @@
-source("morrislib.R")
+source("../morrislib.R")
 source("profiling.R")
 
 #gene="NR_029560"   # Mir150
