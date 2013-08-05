@@ -433,13 +433,17 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
 
 morris.normalize <- function(df, 
                              normalization=c("TC", "rpm", "scaled", "quantile", "rpkm"),
-                             group=NULL) {
-    stopifnot(!is.null(attr(df, "genome")))
+                             genoe=NULL) {
     ## normalize to total reads in each experiment.
     normalization <- match.arg(normalization)
     df.cols <- sapply(df, is.numeric)  #select numeric variables
 
     if (normalization == "rpkm") {
+        if (is.null(genome)) {
+            stopifnot(!is.null(attr(df, "genome")))
+            genome = attr(df, "genome")
+        }
+
 
         ## FPKM = 10e9 * C / (N * L)
         ## C = # mapped reads that fell into exons of a particular gene
@@ -448,7 +452,7 @@ morris.normalize <- function(df,
         ## http://www.biostars.org/p/11378/
         ## http://www.biostars.org/p/6694/
         ##
-        kg <- morris.getknowngenes(attr(df, "genome"), group=group)
+        kg <- morris.getknowngenes(genome, group=group)
         N <- colSums(df[df.cols], na.rm = TRUE)
         L <- kg[match(rownames(df),kg$name),"exonLen"]
         C <- df[df.cols]
@@ -494,8 +498,6 @@ morris.normalize <- function(df,
         C <- df[df.cols]
         N <- colSums(C, na.rm = TRUE)
 
-        ## here is an alternative technique....
-        ## df = sweep(df,2,(colSums(df)/(10^6)), '/')
         C = sweep(C,2,N,`/`)
         x = sweep(C,2,mean(N),`*`)
     }
