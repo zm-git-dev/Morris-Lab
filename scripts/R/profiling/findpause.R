@@ -2,7 +2,7 @@ source("../morrislib.R")
 source("profiling.R")
 
 datasets= c("061113_A", "061113_B", "061113_C", "061113_D")
-genome <- morris.getGenome(dataset[1])
+genome <- morris.getGenome(datasets[[1]])
 descriptions = morris.fetchdesc(datasets)
 motiflen = 9
 
@@ -25,30 +25,41 @@ main <- function() {
         stopifnot(nrow(kg) == 1)
         
         refseq = kg[1,'name']
-
+        mat <- matrix(0, 0, 50)
         for (dataset in datasets) {
             df = morris.getalignments(dataset, refseq)
             attr(df, "dataset") <- descriptions[dataset,"description"]
             ribo.profile = profile(df, kg[refseq,])
             print(paste0(refseq,":", ribo.profile$transcript()$name2()))
             df <- ribo.profile$plotpositions()
-            print(head(df))
-            browser()
             for (x in profiles[[gene]]) {
                 if (is.null(x)) {
                     xlim <- c(1, ribo.profile$transcript()$txLength())
                 } else {
                     xlim = as.numeric(x)
                 }
-                
+                browser()
+                d = density(df$rpositions)
                 fscore =  function(i) {
                     with(df, sum( (rpositions >= i) 
                                   & (rpositions <= (i+motiflen-1))))
                      }
                 scores = sapply(1:( ribo.profile$transcript()$txLength()), fscore)
-                cat(scores)
+                dim(mat) = c(dim(mat)[1], length(scores))
+                mat <- rbind(mat, scores)
+              
+                print(dim(mat))
             }  ## for each gene section
         }  ## for each dataset
+        dimnames(mat) <- list(NULL, NULL)
+        print(mat)
+        d <- dist(mat) 
+        fit <- cmdscale(d, eig=TRUE, k=2)
+        browser()
+        x <- fit$points[,1]
+        y <- fit$points[,2]
+        plot(x, y, xlab="Coordinate 1", ylab="Coordinate 2",   main="Metric  MDS",    type="n")
+        text(x, y, labels = datasets, cex=.7)
     } ## for-each gene
 }
 

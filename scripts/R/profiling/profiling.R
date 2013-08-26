@@ -253,6 +253,7 @@ print.profile <- function(this) {
     print(this$transcript())
 }
 
+
 ## specialization of generic plot function for instances of 'profile' class.
 plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=0, identify=FALSE, ...) {
     usr = par()$usr

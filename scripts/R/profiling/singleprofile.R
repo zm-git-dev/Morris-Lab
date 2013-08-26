@@ -17,17 +17,21 @@ gene='NM_011044'	# 'Pck1'
 gene='NM_016978'    # Oat '-'
 gene='NM_001005419'    # 'Ado'  single exon '-'
 gene="NM_007409"   # ADH1
-gene="NM_010321"  
+gene="RPS23"  
 
 plot.new()
 
-df = morris.getalignments("113010_A", gene)
-
-kg <- morris.getknowngenes(attr(df, "genome"), gene=gene, group=NULL)
+kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
 rownames(kg) <- kg$name
+stopifnot(nrow(kg) == 1)
+        
+refseq = kg[1,'name']
 
-p = profile(df, kg[gene,])
+
+df = morris.getalignments("061113_A", refseq)
+
+p = profile(df, kg[refseq,])
 
 print(p)
-print(plot(p, minlen=28))
+rpos = plot(p, minlen=0, units="aa")
 

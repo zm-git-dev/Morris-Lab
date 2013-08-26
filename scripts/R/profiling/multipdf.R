@@ -2,8 +2,6 @@ source("../morrislib.R")
 source("profiling.R")
 
 datasets= c("061113_A", "061113_B", "061113_C", "061113_D")
-genome <- morris.getGenome(dataset[1])
-descriptions = morris.fetchdesc(datasets)
 
 profiles <- list(
     RPS2 = list(c()),
@@ -16,14 +14,25 @@ profiles <- list(
     
 )
 
+# prostate datasets
+datasets <- c("103112_B_MM1",
+              "030713_A_MM1",
+              "032513_B_MM1",
+              "103112_A_MM1",
+              "030713_B_MM1",
+              "032513_A_MM1")
 profiles <- list(
-    RPS23 = list(c())
+    ADH1 = list(c())
 )
+
+genome <- morris.getGenome(datasets[1])
+descriptions = morris.fetchdesc(datasets)
+
 
 main <- function() {
 
     filename = "profiles.pdf"
-    pdf(file=filename)
+    ##pdf(file=filename)
     par(mfrow = c(2,2))
 
     for (gene in names(profiles)) {
@@ -35,7 +44,7 @@ main <- function() {
 
         for (dataset in datasets) {
             df = morris.getalignments(dataset, refseq)
-            attr(df, "dataset") <- descriptions[dataset,"description"]
+            ##attr(df, "dataset") <- descriptions[dataset,"description"]
             ribo.profile = profile(df, kg[refseq,])
             print(paste0(refseq,":", ribo.profile$transcript()$name2()))
             for (x in profiles[[gene]]) {
@@ -48,7 +57,7 @@ main <- function() {
             }  ## for each gene section
         }  ## for each dataset
     } ## for-each gene
-    dev.off()
+    ##dev.off()
 }
 
 main()
