@@ -1,9 +1,8 @@
 ## There is a prominent cluster of reads towards the 3'-end of RPS23.
 ## This cluster may be due to a ribosome pause site, or to a protein
-## complex that co-pecipitates with other fragments inside of
-## ribosomes.
+## complex that co-precipitates with other ribosomal-trapped fragments.
 ##
-## a working hyposesis is that the distribution of reads protected by
+## A working hyposesis is that the distribution of reads protected by
 ## ribosomes will be different than the distribution of fragments
 ## protected by a protein complex.
 
