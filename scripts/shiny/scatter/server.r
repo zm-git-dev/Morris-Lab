@@ -1,6 +1,27 @@
 library(ggplot2)
+source("~/Morris-Lab/scripts/R/morrislib.R")
+
+## Retrieve common data from the MySQL database.
+## this is done only once as it does not depend on the value of any
+## UI variables.
+
+
+tumorSpecific <- c( "Tubb5", "Hist2h2bb", "Nov", "Chgb", "Hist1h1a" )
+epithelial <- c("Tgm4", "Pbsn", "Sbp")
+fibroblast <- c("Vim", "Itgb1", "Itga1", "Col1a1", "Col1a2")
+
+# divide the data into two sets - control and treated...
+##treated <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+/TR+")
+treated <- c("103112_A", "030713_B", "041713_B")
+control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+datasets <- c(treated,control)
+df.raw = morris.genecounts(datasets, group=NULL)
+genome = attr(df.raw, "genome")
+
+kg <- morris.getknowngenes(genome)
 
 hw <- read.csv("heightweight.csv")
+
 
 # Returns a logical vector of which values in `x` are within the min and max
 # values of `range`.
@@ -23,10 +44,9 @@ shinyServer(function(input, output) {
     # ------------------------------------------------------------------
     # Limit range of data
     # Take a subset of the data, respecting the limited range
-    hw_sub <- hw[in_range(hw[[input$x_var]], input$x_range) &
-                 in_range(hw[[input$y_var]], input$y_range), ]
+    df.sub <- df.raw[apply(df, 1, function(row) (all(in_range(row, input$x_range))))]
 
-    hw_sub
+    df.sub
   }
 
 
@@ -34,9 +54,9 @@ shinyServer(function(input, output) {
   output$main_plot <- renderPlot({
 
     # Take a subset of the data, respecting the limited range
-    hw_sub <- limit_data_range()
+    df.sub <- limit_data_range()
 
-    if (is.null(hw_sub))
+    if (is.null(df.sub))
       return()
 
     # Get the x and y values from the non-range-limited data, for convenience
