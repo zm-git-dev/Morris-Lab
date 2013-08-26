@@ -55,7 +55,6 @@ ylim=c(min(m2), max(m2))
 
 descriptions = morris.fetchdesc(datasets)
 
-quartz()
 
 plot(m1[rows.nohighlight], m2[rows.nohighlight],
      xlab=descriptions[control,1], ylab=descriptions[treated,1],
@@ -68,7 +67,7 @@ tstr = paste0(descriptions[,1], collapse="\n vs. ")
 title(tstr, sub=paste0("eIF4 highlight", norm, collapse=", "), cex.main=.9, cex.sub=.6, col.sub="grey73")
 
 
-legend(locator(), c("Protein Coding", "eIF4 pathway"), col = c("black", "red"), pch = c(16, 17), merge=TRUE, bg="gray95", text.font=2)
+##legend(locator(), c("Protein Coding", "eIF4 pathway"), col = c("black", "red"), pch = c(16, 17), merge=TRUE, bg="gray95", text.font=2)
 
 
 repeat {
