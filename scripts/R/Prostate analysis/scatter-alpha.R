@@ -44,21 +44,22 @@ df <- df[grep("Rik", kg$name2[match(rownames(df), kg$name)], invert=TRUE), ]
 ## toss any gene that does not have a corresponding common name
 df <- df[!is.na(kg$name2[match(rownames(df), kg$name)]), ]
 
+## scale all gene counts to the count of Col1a2
+Col1a2 = with(kg, name[match("Col1a2", name2)])
+n = as.numeric(df[Col1a2, control])
+df[control] = sweep(df[control], 2, n, '/')
+df[control] = sweep(df[control], 2, mean(n), '*')
+n = as.numeric(df[Col1a2, treated])
+df[treated] = sweep(df[treated], 2, n, '/')
+df[treated] = sweep(df[treated], 2, mean(n), '*')
+
+## eliminate any gene that has a count < 20
 df <- df[apply(df, 1, function(row) (all(row > 20))),]
 
 ## Normalize to mapped reads per million mapped reads
 attr(df, "genome") = genome
 df.norm = morris.normalize(df[treated], normalization="rpm")
 df.norm[control] = morris.normalize(df[control], normalization="rpm")
-## scale all gene count to the count of Col1a2
-## 	First lookup the values for Col1a2
-with(kg, name[match("Col1a2", name2)])
-Col1a2 = as.numeric(df.norm[with(kg, name[match("Col1a2", name2)]),])
-stopifnot(!any(Col1a2==0))
-
-##	Now divide each column in each row by to corresponding column of the reference.
-##	http://stackoverflow.com/questions/13830979/#13831155
-df.norm <- sweep(df.norm, 2, Col1a2, '/')
 
 ## Save the refseq names of fibroblast genes that we will want to highlight
 rows.epithelial <- with(kg, name[match(epithelial, name2)])
@@ -96,15 +97,10 @@ stopifnot(length(rows.epithelial) == length(epithelial))
 stopifnot(length(rows.fibroblast) == length(fibroblast))
 stopifnot(length(rows.tumorSpecific) == length(tumorSpecific))
 
-## textxy(m1[rows.epithelial], m2[rows.epithelial], epithelial, dcol="red")
-## textxy(m1[rows.fibroblast], m2[rows.fibroblast], fibroblast, dcol="blue")
-## textxy(m1[rows.tumorSpecific], m2[rows.tumorSpecific], tumorSpecific, dcol="green")
-## Sys.sleep(0) 
-
 repeat {
     ans <- identify(m1, m2, n=1, plot=FALSE)
     if(!length(ans)) break
-    print(paste0("(",m1[ans], ",", m2[ans],")  ",rownames(df.norm)[ans]," ", cn[ans,"common"]))
+    print(paste0("(",m1[ans], ",", m2[ans],")  ",rownames(df.norm)[ans]," ", with(kg, name2[match(rownames(df.norm)[ans], name)])))
 }
 
 Sys.sleep(0) 
