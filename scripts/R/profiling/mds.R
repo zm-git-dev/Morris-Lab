@@ -69,10 +69,13 @@ main <- function() {
                 mat <- rbind(mat, scores)
             }  ## for each gene section
         }  ## for each dataset
+
+        browser()
+        gg <- ggplot(melt(mat), aes(name="", x=X2, y=value))
+        gg <- gg + geom_line(aes(color=X1))
         
         dimnames(mat) <- list(NULL, NULL)
         message(paste0("Dimensions of scoring matrix:", dim(mat)))
-        browser()
         d <- dist(mat) 
         message(paste0("Dimensions of square matrix:", dim(d)))
         fit <- cmdscale(d, eig=TRUE, k=2)
