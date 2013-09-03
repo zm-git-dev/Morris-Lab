@@ -38,9 +38,12 @@ shinyUI(
                 
                 ), 
             
+            conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
+            conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
             div(class="span6",
                 actionButton("getGraph", "Get Graph")),
             div(class="span6", checkboxInput(inputId = "log", label = "log10 scale", value = FALSE)),
+            
             helpText("Use log scale if compared searches are significantly different"),
             downloadButton('downloadData', 'Download Output as csv')
             
@@ -49,8 +52,8 @@ shinyUI(
         ## Show the caption a line graph of the daily rate and summary of results 
         mainPanel(
             tabsetPanel(
-                tabPanel("Read-depth", plotOutput("rdplot")), 
-                tabPanel("MDV", plotOutput("plot")), 
+                tabPanel("Read Depth", plotOutput("rdplot")), 
+                tabPanel("MDS", plotOutput("plot")), 
                 tabPanel("Table", tableOutput("view"))
                 )
             ) ## end-mainpanel

@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-03 12:00:27 chris>
+# Time-stamp: <2013-09-03 15:21:38 chris>
 
   library(shiny)
   library(RJSONIO) # acquiring and parsing data
@@ -227,10 +227,10 @@ shinyServer(function(input, output, session) {
         
         gg <- ggplot(melt(mat), aes(name="", x=X2, y=value, group=X1))
         gg <- gg + theme_bw()
-        gg <- gg + theme(legend.position="right",
-                         legend.title = element_text(colour="black", size = 14, face = "bold"),
-                         legend.text = element_text(colour="blue", size = 12, face = "bold"))
-        gg <- gg + scale_colour_discrete(name = paste(input$dataspec, ":", input$geneSelect))
+        ## gg <- gg + theme(legend.position="top",
+        ##                  legend.title = element_text(colour="black", size = 14, face = "bold"),
+        ##                  legend.text = element_text(colour="blue", size = 12, face = "bold"))
+        ## gg <- gg + scale_colour_discrete(name = paste(input$dataspec, ":", input$geneSelect))
         gg <- gg + ylab("read depth (normalized to RPM)")
         gg <- gg + xlab("Transcript position")
         ##gg <- gg + geom_line(aes(color=X1))
