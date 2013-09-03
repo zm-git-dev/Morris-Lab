@@ -11,18 +11,27 @@ options(max.print=30)
 ## options(error = quote({dump.frames(to.file=TRUE); q()}))
 
 
-## fetchData - retrieve a dataframe containing the data we are interested in comparing.
-## in this case we are retrieving the data from a sql database.
-##
-## datasets - contains the names of multiple datasets, e.g. c("110112_A_MM1", "110112_B_MM1")
-##
-## mincount - the minimum number of reads that a gene expression must possess before it will be counted.
-##
-## group - The mysql database group to use.  "morrisdata" assumes the
-## database is accessible on the local network.  "remote" assumes the
-## database is accessible on localhost:6607.  Usually this means you
-## are at a remote location and you have set up a tunnel via ssh to
-## the database at UW.
+
+##' Retrieve per-gene alignment
+##' counts for a collection of datasets.
+##'
+##' This data is useful for differential gene expression analysis, but
+##' it not useful for ribosome profile analysis - use getalignments
+##' for that.
+##' @title morris.fetchdata
+##' @param datasets contains the names of multiple datasets,
+##' e.g. c("110112_A_MM1", "110112_B_MM1")
+##' @param group The mysql database group to use.  "morrisdata"
+##' assumes the database is accessible on the local network.  "remote" assumes the
+##' database is accessible on localhost:6607.  Usually this means you
+##' are at a remote location and you have set up a tunnel via ssh to
+##' the database at UW.
+##' @return Returns data frame containing one row per gene, and one
+##' column per dataset.  Each entry in the row is a raw read count for
+##' one gene in one dataset.  Missing values will be marked NA.  A
+##' gene must have a non-zero value in at least one dataset in order
+##' to be listed.
+##' @author chris
 morris.fetchData <- function(datasets, group=NULL) {
 
     result <- tryCatch({
@@ -323,25 +332,6 @@ morris.scatter <- function(datasets, mincount=25, group=NULL,
 }
 
 
-## A function to use identify to select points, and overplot the
-## points with another symbol as they are selected
-identifyPch <- function(x, y = NULL, n = length(x), pch = 19, ...)
-{
-    xy <- xy.coords(x, y); x <- xy$x; y <- xy$y
-    sel <- rep(FALSE, length(x)); res <- integer(0)
-    while(sum(sel) < n) {
-        ans <- identify(x[!sel], y[!sel], n = 1, plot = FALSE, ...)
-        if(!length(ans)) break
-        ans <- which(!sel)[ans]
-        points(x[ans], y[ans], pch = pch)
-        sel[ans] <- TRUE
-        res <- c(res, ans)
-    }
-    return(res)
-}
-
-
-
 ## retrieve a list of dataset names that have per-gene expression values stored in the database.
 
 ## This routine will let you fetch the names of datasets based on
@@ -519,6 +509,16 @@ morris.normalize <- function(df,
     return(x)
 }
 
+
+##' Retrieve alignments for a single dataset from the database.  If gene is specified, only
+##' retrieve alignments for that particular gene.
+##'
+##' . details
+##' @param dataset  A string representation of a dataset name from the SQL table 'datasets_tbl'
+##' @param gene A string name of a gene, either common name or RefSeq name
+##' @param group Optional specification of the group used to connect to the MySQL database.
+##' @return dataframe containing alignments, on alignment per row.
+##' @author Chris Warth
 morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
     ## this routine operates only on ONE dataset name - NOT a vector!
     stopifnot(length(dataset) == 1)
