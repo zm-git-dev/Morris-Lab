@@ -20,7 +20,13 @@ shinyUI(
                 p(strong("Select a set of ribomsome profiles to analyze")),
                 selectInput(inputId = "dataspec",
                             label = "Profile data sets:",
-                            choices = c("Mouse Prostate"="prostate", "Human CLL"="cll"),
+                            choices = c(
+                                "Mouse Prostate"="prostate",
+                                "Human CLL"="cll",
+                                "PEO1-RPT-corrUp"="PEO1-RPT-corrUp",
+                                "PEO1-RPT-corrDown"="PEO1-RPT-corrDown",
+                                "PEO1-RPT-top200"="PEO1-RPT-top200"
+                                ),
                             selected = "Human CLL"),
                 p(strong("Select gene to analyze")),
                 uiOutput('geneSelect')

@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-08-28 13:39:41 chris>
+# Time-stamp: <2013-09-03 12:00:27 chris>
 
   library(shiny)
   library(RJSONIO) # acquiring and parsing data
@@ -18,11 +18,75 @@ trim.leading <- function (x)  sub("^\\s+", "", x)
 
 shinyServer(function(input, output, session) {
   
+
+
+    ## Reactive function to create a list of datasets.  This list may
+    ## contain a set of specifications for a database, or it might be a
+    ## specification for retrieving data from a file.
+    inputDatasets <- reactive({
+        if (is.null(input$dataspec))
+            return()
+        print("entering data reactive function")
+        ## Choose the datasets that meet the user's criteria
+        if (input$dataspec == "prostate") {
+            control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+            treated <- c("103112_A", "030713_B", "041713_B")
+            datasets = c(control=control, treated=treated)
+        } else if (input$dataspec == "cll") {
+            control = c("061113_A")
+            treated = c("061113_B", "061113_C", "061113_D")
+            datasets = c(control=control, treated=treated)
+        } else if (input$dataspec == "PEO1-RPT-corrUp") {
+            control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
+            treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
+            datasets = c(control = control, treated = treated)
+            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-corrUp-coverage.tsv"
+        } else if (input$dataspec == "PEO1-RPT-corrDown") {
+            control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
+            treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
+            datasets = c(control = control, treated = treated)
+            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-corrDown-coverage.tsv"
+        } else if (input$dataspec == "PEO1-RPT-top200") {
+            control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
+            treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
+            datasets = c(control = control, treated = treated)
+            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-top200-coverage.tsv"
+        } else {
+            stop(paste0("unknown data specification - ", input$dataspec))
+        }
+        return(datasets)
+    })
+
+
+    ## Reactive function to retrieving complete data for a dataset
+    dataFromFile <- reactive({
+        ## only works for datasets with filename attribute
+        datasets = inputDatasets()
+        if (is.null(attr(datasets, "filename")))
+            return()
+        data = read.csv(attr(datasets, "filename"), sep='\t')
+        data = data[, c("symbol", datasets)]
+    })
+        
+
+    # Reactive function for retrieving a list of genes covered in the
+    # datasets as specified by inputDatasets.
     geneChoices <- reactive({
         print("in gene choices")
-        if(is.null(input$dataspec))
+        datasets = inputDatasets()
+        if (is.null(datasets))
             return()
 
+        # if the data is stored in a file, we'll pretty much have to read the whole thing in.
+        if (! is.null(attr(datasets, "filename"))) {
+            data = dataFromFile()
+            ## extract the list of genes.
+            return(levels(data$symbol))
+        }
+
+        ## Otherwise the data is stored in a database and we can let
+        ## the DB filter out the gene list for us.
+        
         ## Get the top expressed genes for the aggregate datasets?
         ## Get all the known genes for the genome?
 
@@ -30,7 +94,7 @@ shinyServer(function(input, output, session) {
         ## Take the datasets, grab the gene list from the dataset
         ## run unique on it.
         ## as.data.frame(table(datasets))
-        if (input$dataspec == "prostate") {
+        else if (input$dataspec == "prostate") {
             return(c(c( "Tubb5", "Hist2h2bb", "Nov", "Chgb", "Hist1h1a" ),
                      c("Tgm4", "Pbsn", "Sbp", "Rnase1"),
                      c("Vim", "Itgb1", "Itga1", "Col1a1", "Col1a2")))
@@ -42,6 +106,7 @@ shinyServer(function(input, output, session) {
         
     })
                 
+                
     output$geneSelect <- renderUI({
         print("in renderUI of geneselect")
         choices = geneChoices()
@@ -50,32 +115,38 @@ shinyServer(function(input, output, session) {
         selectInput("geneSelect", "", choices=choices)
     })
 
-    inputDatasets <- reactive({
-        print("entering data reactive function")
-        ## Choose the datasets that meet the user's criteria
-        if (input$dataspec == "prostate") {
-            control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
-            treated <- c("103112_A", "030713_B", "041713_B")
-        } else if (input$dataspec == "cll") {
-            control = c("061113_A")
-            treated = c("061113_B", "061113_C", "061113_D")
-        } else {
-            stop(paste0("unknown data specificartion - ", input$dataspec))
-        }
-        c(treated,control)
-    })
-
-    ## a reactive conductor function, carries out a long-running computation.
+    ## Reactive function for retrieving a matrix representing aligned
+    ## read positions on a patricular gene for a collection of
+    ## datasets.  The datasets might repesent replicated control and
+    ## treated conditions, and the gene is one particular gene chosen
+    ## from among those in the datasets
+    ##
+    ## FIXME: This reactive should be prioritized below that of
+    ## geneChoices, as this routine cannot proceed until a valid gene
+    ## has been selected from the list, and that list is dependent on
+    ## the dataset specification.
     data <- reactive({
-        if(is.null(input$geneSelect))
+        gene = input$geneSelect
+        if(is.null(gene))
             return()
 
         datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        
+        if (! is.null(attr(datasets, "filename"))) {
+            data <- dataFromFile()
+            data <- data[data$symbol==gene,]
+            rownames(data) = 1:nrow(data)
+            mat = as.matrix(t(subset(data,,-symbol)))
+            ## extract the list of genes.
+            return(mat)
+        }
+        
         genome <- morris.getGenome(datasets[[1]])
         descriptions = morris.fetchinfo(datasets)[,"description", drop=FALSE]
         stats = morris.fetchstats(datasets)
 
-        gene = input$geneSelect
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
         rownames(kg) <- kg$name
         stopifnot(nrow(kg) == 1)
@@ -145,7 +216,16 @@ shinyServer(function(input, output, session) {
         mat = data()
         if (is.null(mat))
             return()
-        gg <- ggplot(melt(mat), aes(name="", x=X2, y=value))
+
+        ## get the datasets, as this will tell us which are control
+        ## group and which are the experimental group.
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        treated = grep("treated", names(datasets))
+        control = setdiff(1:length(datasets), treated)
+        
+        gg <- ggplot(melt(mat), aes(name="", x=X2, y=value, group=X1))
         gg <- gg + theme_bw()
         gg <- gg + theme(legend.position="right",
                          legend.title = element_text(colour="black", size = 14, face = "bold"),
@@ -153,7 +233,9 @@ shinyServer(function(input, output, session) {
         gg <- gg + scale_colour_discrete(name = paste(input$dataspec, ":", input$geneSelect))
         gg <- gg + ylab("read depth (normalized to RPM)")
         gg <- gg + xlab("Transcript position")
-        gg <- gg + geom_line(aes(color=X1))
+        ##gg <- gg + geom_line(aes(color=X1))
+        gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color="red"))
+        gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color="blue"))
         print(gg)
     })
     
