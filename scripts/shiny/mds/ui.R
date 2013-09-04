@@ -36,10 +36,24 @@ shinyUI(
                 ##             label=" ",
                 ##             min = 0, max = 60, step = 1, value = c(0,2))
                 
-                ), 
+                ),
+
+            ## It would be nice to have a canvas covering the plot area with
+            ## a message and a busy indicator.
             
             conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
             conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
+
+            ## bootstrap dropdown menu code shamelessly stolen from
+            ## http://stackoverflow.com/a/13998987/1135316
+            ##
+            div(class="dropdown btn-group",
+                a(img(src="navicon.svg"), class="btn dropdown-toggle", "data-toggle"="dropdown", href="#",
+                  span(class="caret")),
+                tags$ul(class="dropdown-menu",
+                        tags$li(a("Foo", href="#", target="_blank")),
+                        tags$li(a("Bar", href="#", target="_blank")))),
+
             div(class="span6",
                 actionButton("getGraph", "Get Graph")),
             div(class="span6", checkboxInput(inputId = "log", label = "log10 scale", value = FALSE)),
