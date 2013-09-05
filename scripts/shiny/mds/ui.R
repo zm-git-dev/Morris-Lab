@@ -44,15 +44,6 @@ shinyUI(
             conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
             conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
 
-            ## bootstrap dropdown menu code shamelessly stolen from
-            ## http://stackoverflow.com/a/13998987/1135316
-            ##
-            div(class="dropdown btn-group",
-                a(img(src="navicon.svg"), class="btn dropdown-toggle", "data-toggle"="dropdown", href="#",
-                  span(class="caret")),
-                tags$ul(class="dropdown-menu",
-                        tags$li(a("Foo", href="#", target="_blank")),
-                        tags$li(a("Bar", href="#", target="_blank")))),
 
             div(class="span6",
                 actionButton("getGraph", "Get Graph")),
@@ -62,11 +53,27 @@ shinyUI(
             downloadButton('downloadData', 'Download Output as csv')
             
             ),
+
         
         ## Show the caption a line graph of the daily rate and summary of results 
         mainPanel(
+            tags$head( tags$link(rel="stylesheet", type="text/css", href="app.css")),
             tabsetPanel(
-                tabPanel("Read Depth", plotOutput("rdplot")), 
+                tabPanel("Read Depth",
+                         div(id="plot_container",
+                            plotOutput("rdplot"),
+                ##            tags$button(class="button", "Click Here"))),
+                             ## bootstrap dropdown menu code shamelessly stolen from
+                             ## http://stackoverflow.com/a/13998987/1135316
+                             ##
+                             div(id="navicon", class="dropdown btn-group",
+                                 a(img(src="navicon.svg"), class="btn dropdown-toggle", "data-toggle"="dropdown", href="#",
+                                   span(class="caret")),
+                                 tags$ul(class="dropdown-menu",
+                                         tags$li(a("Foo", href="#", target="_blank")),
+                                         tags$li(a("Bar", href="#", target="_blank")))))),
+                
+                
                 tabPanel("MDS", plotOutput("plot")), 
                 tabPanel("Table", tableOutput("view"))
                 )
