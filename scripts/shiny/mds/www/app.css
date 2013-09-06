@@ -22,10 +22,14 @@
     /* height:30px; */
 }
 
-.dropdown-menu {
-    border:1px solid red;
-}
-
 .tab-content {
     overflow: visible;
 }
+
+.dropdown-menu
+{
+    float:right;
+    left: -99%;
+
+}
+

@@ -69,9 +69,12 @@ shinyUI(
                              div(id="navicon", class="dropdown btn-group",
                                  a(img(src="navicon.svg"), class="btn dropdown-toggle", "data-toggle"="dropdown", href="#",
                                    span(class="caret")),
-                                 tags$ul(class="dropdown-menu",
-                                         tags$li(a("Foo", href="#", target="_blank")),
-                                         tags$li(a("Bar", href="#", target="_blank")))))),
+                                 tags$ul(class="dropdown-menu pull-left",
+                                         tags$li(a("Print chart", href="#", target="_blank")),
+                                         tags$li(a("Download PNG image", href="#", target="_blank")),
+                                         tags$li(a("Download JPEG image", href="#", target="_blank")),
+                                         tags$li(a("Download PDF Document", href="#", target="_blank"))
+                                         )))),
                 
                 
                 tabPanel("MDS", plotOutput("plot")), 
