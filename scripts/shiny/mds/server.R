@@ -1,13 +1,10 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-03 15:21:38 chris>
+# Time-stamp: <2013-09-06 20:59:06 chris>
 
   library(shiny)
-  library(RJSONIO) # acquiring and parsing data
   library(ggplot2) # graphs
   library(plyr)  # manipulating data
-  library(lubridate) #dates
-  library(stringr)
   library(reshape)
 
 ## FIXME - this hardcoded path will not be portable.
@@ -194,16 +191,27 @@ shinyServer(function(input, output, session) {
         mat = data()
         if (is.null(mat))
             return()
+
+        ## get the datasets, as this will tell us which are control
+        ## group and which are the experimental group.
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        treated = grep("treated", names(datasets))
+        control = setdiff(1:length(datasets), treated)
+        
+        condition <- sapply(names(datasets), function(x) !is.na(pmatch('treated',x)))
+
         d <- dist(mat)
         print("calling cmdscale")
         fit <- cmdscale(d, eig=TRUE, k=2)
-        x <- fit$points[,1]
-        y <- fit$points[,2]
-        gg <- ggplot(data.frame(x=x, y=y), aes(name="", x=x, y=y, label=rownames(mat)),
+        gg.data = data.frame("x"=fit$points[,1], "y"=fit$points[,2], color=condition)
+
+        gg <- ggplot(gg.data, aes(name="", x=x, y=y, label=rownames(mat), color="condition"),
                      environment = environment())
         gg <- gg + theme_bw()
         gg <- gg + theme(legend.position="top",legend.title=element_blank(), legend.text = element_text(colour="blue", size = 14, face = "bold"))
-        gg <- gg + geom_point() 
+        gg <- gg + geom_point(size=10, aes(group=condition, color=condition)) 
         gg <- gg + geom_text()
         gg <- gg + scale_x_continuous(expand = c(.2,0))
         print(gg)

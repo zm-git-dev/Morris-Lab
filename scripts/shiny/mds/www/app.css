@@ -33,3 +33,8 @@
 
 }
 
+## http://stackoverflow.com/a/13068914/1135316
+.btn .btn-group .dropdown .dropdown-menu {
+  background: none !important; 
+  border: 0 !important;
+}

@@ -27,7 +27,7 @@ shinyUI(
                                 "PEO1-RPT-corrDown"="PEO1-RPT-corrDown",
                                 "PEO1-RPT-top200"="PEO1-RPT-top200"
                                 ),
-                            selected = "Human CLL"),
+                            selected = "PEO1-RPT-corrUp"),
                 p(strong("Select gene to analyze")),
                 uiOutput('geneSelect')
                 
@@ -62,15 +62,14 @@ shinyUI(
                 tabPanel("Read Depth",
                          div(id="plot_container",
                             plotOutput("rdplot"),
-                ##            tags$button(class="button", "Click Here"))),
                              ## bootstrap dropdown menu code shamelessly stolen from
                              ## http://stackoverflow.com/a/13998987/1135316
                              ##
                              div(id="navicon", class="dropdown btn-group",
-                                 a(img(src="navicon.svg"), class="btn dropdown-toggle", "data-toggle"="dropdown", href="#",
-                                   span(class="caret")),
-                                 tags$ul(class="dropdown-menu pull-left",
+                                 a(img(src="navicon.svg"), class="btn btn-small dropdown-toggle", "data-toggle"="dropdown", href="#"),
+                                 tags$ul(class="dropdown-menu pull-right",
                                          tags$li(a("Print chart", href="#", target="_blank")),
+                                         tags$li(class="divider"),
                                          tags$li(a("Download PNG image", href="#", target="_blank")),
                                          tags$li(a("Download JPEG image", href="#", target="_blank")),
                                          tags$li(a("Download PDF Document", href="#", target="_blank"))
