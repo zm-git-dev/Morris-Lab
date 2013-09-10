@@ -1,14 +1,20 @@
 #!/usr/bin/env Rscript
 
-## source a file from wherevere this script was found.
-## http://stackoverflow.com/questions/1815606/rscript-determine-path-of-the-executing-script/1815743
+## Relative code sourcing with R - eases the pain of dealing with nested code directories
+##
+## This should let you import files as above, and call these rscripts
+## from any location so that you can avoid absolute paths.
+##
+## http://stackoverflow.com/a/6461822/1135316
+## https://github.com/metasoarous/sourcelocal
+##
 sourcelocal <- function(fname){
     argv <- commandArgs(trailingOnly = FALSE)
     base_dir <- dirname(substring(argv[grep("--file=", argv)], 8))
     source(paste(base_dir, fname, sep="/"))
 }
 
-sourcelocal("morrislib.R")
+source("morrislib.R")
 library(optparse) 
 
 option_list <- list(
@@ -44,7 +50,6 @@ if (opt$options$list) {
     group=opt$options$group
     normalization=opt$options$normalization
     mincount = opt$options$mincount
-    
     df = morris.genecounts(datasets, group=group)
 
     ## Identify entries that do not have proper read depth, but don't
@@ -74,12 +79,13 @@ if (opt$options$list) {
       df <- df[row.sub,, drop=FALSE]
     
     ## add common names for the refseq genes.
-    df$common <- morris.commonnames(rownames(df), group=group)
+    common <- morris.commonnames(rownames(df),  attr(df, "genome"), group=group)
+    df$common = common$common
 
     ## rearrange the columns to move the last column (common name) to the second column
     ## this is a little tricky b/c number of cols in df is variable.
     df <- df[c(ncol(df), 1:(ncol(df)-1))]
 
     options("scipen"=100, "digits"=4)
-    print(df)
+    write.csv(df, file="/dev/stdout")
 }
