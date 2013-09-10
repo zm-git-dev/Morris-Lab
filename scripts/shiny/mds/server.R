@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-06 20:59:06 chris>
+# Time-stamp: <2013-09-10 00:23:29 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -11,7 +11,8 @@
   source("~/Morris-Lab/scripts/R/morrislib.R")
   source("~/Morris-Lab/scripts/R/profiling/profiling.R")
 
-trim.leading <- function (x)  sub("^\\s+", "", x)
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 shinyServer(function(input, output, session) {
   
@@ -48,6 +49,11 @@ shinyServer(function(input, output, session) {
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
             attr(datasets, "filename") = "~/Downloads/PEO1-RPT-top200-coverage.tsv"
+        } else if (input$dataspec == "test") {
+            control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
+            treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
+            datasets = c(control = control, treated = treated)
+            attr(datasets, "filename") = "~/Downloads/test.tsv"
         } else {
             stop(paste0("unknown data specification - ", input$dataspec))
         }
@@ -180,14 +186,13 @@ shinyServer(function(input, output, session) {
     
     ## Create a heading based on range of dates selected for printing as a caption
     output$caption <- renderText({
-        if(is.null(input$geneSelect) || is.null(input$dataspec))
-            return()
-        paste(input$dataspec, ":", input$geneSelect)
+        foo = input$printmenu1
+        paste("", Sys.time())
     })
     
     
     ## create 2-D scatter plot of multidimensional sampling data
-    output$plot <- renderPlot({
+    output$mdsplot <- renderPlot({
         mat = data()
         if (is.null(mat))
             return()
@@ -197,22 +202,40 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(datasets))
             return()
-        treated = grep("treated", names(datasets))
-        control = setdiff(1:length(datasets), treated)
+        treated <- grep("treated", names(datasets))
+        control <- setdiff(1:length(datasets), treated)
         
         condition <- sapply(names(datasets), function(x) !is.na(pmatch('treated',x)))
 
-        d <- dist(mat)
-        print("calling cmdscale")
+        d <- dist(mat, method=input$distOption)
         fit <- cmdscale(d, eig=TRUE, k=2)
+
+        ## user can select a standard palette or one that is more
+        ## visible to those with R-G color blinkdness.
+        colorPalette <- switch(input$colorOption,
+                               "std"=c("red", "blue"),
+                               "rg-cb"=cbPalette)
+
         gg.data = data.frame("x"=fit$points[,1], "y"=fit$points[,2], color=condition)
 
-        gg <- ggplot(gg.data, aes(name="", x=x, y=y, label=rownames(mat), color="condition"),
+        gg <- ggplot(gg.data, aes(name="", x=x, y=y, label=rownames(mat)),
                      environment = environment())
         gg <- gg + theme_bw()
-        gg <- gg + theme(legend.position="top",legend.title=element_blank(), legend.text = element_text(colour="blue", size = 14, face = "bold"))
-        gg <- gg + geom_point(size=10, aes(group=condition, color=condition)) 
-        gg <- gg + geom_text()
+        gg <- gg + theme(axis.title.x = element_blank(),
+                         axis.title.y = element_blank(),
+                         legend.title=element_blank(),
+                         ## legend.position="bottom",
+                         legend.direction="horizontal",
+                         legend.text = element_text(colour="blue", size = 14, face = "bold"))
+        gg <- gg + theme(legend.justification=c(.5,1), legend.position=c(.5,0))
+        gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
+        gg <- gg + theme(panel.border = element_blank())
+        ##  gg <- gg + theme(legend.background = element_rect(colour = 'purple', fill = 'pink', size = 1))
+        
+        gg <- gg + geom_point(size=4, aes(group=condition, color=condition)) 
+        ##gg <- gg + geom_text()
+        gg <- gg + scale_colour_manual(values=colorPalette,
+                                       labels=c("Control", "Treated"))
         gg <- gg + scale_x_continuous(expand = c(.2,0))
         print(gg)
     })
@@ -244,6 +267,8 @@ shinyServer(function(input, output, session) {
         ##gg <- gg + geom_line(aes(color=X1))
         gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color="red"))
         gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color="blue"))
+                                             "PEO1-RPT-top200"="PEO1-RPT-top200"
+                                             "PEO1-RPT-top200"="PEO1-RPT-top200"
         print(gg)
     })
     

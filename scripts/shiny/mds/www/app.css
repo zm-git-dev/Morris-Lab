@@ -5,7 +5,7 @@
    http://stackoverflow.com/a/12373549/1135316
 */
 
-#plot_container {
+.plot_container {
     position:	relative; 
     overflow:	visible;
     /* display:inline-block; */
@@ -14,7 +14,7 @@
 }
 
 
-#navicon {
+.navicon {
     position:absolute;
     top:1%;
     right:1%;
@@ -38,3 +38,5 @@
   background: none !important; 
   border: 0 !important;
 }
+
+
