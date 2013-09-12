@@ -1,9 +1,10 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-10 00:23:29 chris>
+# Time-stamp: <2013-09-11 10:12:26 chris>
 
   library(shiny)
   library(ggplot2) # graphs
+  library(grid)
   library(plyr)  # manipulating data
   library(reshape)
 
@@ -13,18 +14,17 @@
 
 
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+stdPalette <- c("red", "blue")
 
 shinyServer(function(input, output, session) {
   
-
-
     ## Reactive function to create a list of datasets.  This list may
     ## contain a set of specifications for a database, or it might be a
     ## specification for retrieving data from a file.
     inputDatasets <- reactive({
         if (is.null(input$dataspec))
             return()
-        print("entering data reactive function")
+        message("in inputDatasets reactive function")
         ## Choose the datasets that meet the user's criteria
         if (input$dataspec == "prostate") {
             control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
@@ -75,7 +75,7 @@ shinyServer(function(input, output, session) {
     # Reactive function for retrieving a list of genes covered in the
     # datasets as specified by inputDatasets.
     geneChoices <- reactive({
-        print("in gene choices")
+        message("in gene choices")
         datasets = inputDatasets()
         if (is.null(datasets))
             return()
@@ -111,7 +111,7 @@ shinyServer(function(input, output, session) {
                 
                 
     output$geneSelect <- renderUI({
-        print("in renderUI of geneselect")
+        message("in renderUI of geneselect")
         choices = geneChoices()
         if(is.null(choices))
             return()
@@ -136,6 +136,7 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(datasets))
             return()
+        message("in reactive data function")
         
         if (! is.null(attr(datasets, "filename"))) {
             data <- dataFromFile()
@@ -143,6 +144,7 @@ shinyServer(function(input, output, session) {
             rownames(data) = 1:nrow(data)
             mat = as.matrix(t(subset(data,,-symbol)))
             ## extract the list of genes.
+            message("exiting reactive data function early")
             return(mat)
         }
         
@@ -179,12 +181,24 @@ shinyServer(function(input, output, session) {
         }  ## for each dataset
         rownames(mat) = datasets
         
-        print("returning data")
+        message("exiting reactive data function")
         return(mat)
     })
     
     
-    ## Create a heading based on range of dates selected for printing as a caption
+    ## Create a heading string that is visible at the top of the plot
+    ## area.  In case youdon't remember why you would do this, this
+    ## response element is essentially a debugging aid.  It reponds
+    ## every time the dropdown menu 'printmenu1' is triggered and
+    ## prints the current time.  Because the time string is always
+    ## changing, it is easy to see when this has been triggered.
+    ##
+    ## To see the output from this response, you must have something
+    ## like these tags in your ui.R definition:
+    ##
+    ## 		h3(textOutput("caption")),
+    ##
+    ## the word 'caption' dertermines that the tag is a target of this response element.
     output$caption <- renderText({
         foo = input$printmenu1
         paste("", Sys.time())
@@ -193,9 +207,14 @@ shinyServer(function(input, output, session) {
     
     ## create 2-D scatter plot of multidimensional sampling data
     output$mdsplot <- renderPlot({
+        gene = input$geneSelect
+        if(is.null(gene))
+            return()
+
         mat = data()
         if (is.null(mat))
             return()
+        message("in renderPlot for MDS plot")
 
         ## get the datasets, as this will tell us which are control
         ## group and which are the experimental group.
@@ -212,38 +231,51 @@ shinyServer(function(input, output, session) {
 
         ## user can select a standard palette or one that is more
         ## visible to those with R-G color blinkdness.
-        colorPalette <- switch(input$colorOption,
-                               "std"=c("red", "blue"),
-                               "rg-cb"=cbPalette)
+        colorPalette <- if (input$colorOption) cbPalette else stdPalette
 
         gg.data = data.frame("x"=fit$points[,1], "y"=fit$points[,2], color=condition)
 
         gg <- ggplot(gg.data, aes(name="", x=x, y=y, label=rownames(mat)),
                      environment = environment())
         gg <- gg + theme_bw()
+        gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
+                         legend.text = element_text(size = 14, face = "bold"),
+                         legend.position="top",
+                         legend.direction="horizontal")
         gg <- gg + theme(axis.title.x = element_blank(),
-                         axis.title.y = element_blank(),
-                         legend.title=element_blank(),
-                         ## legend.position="bottom",
-                         legend.direction="horizontal",
-                         legend.text = element_text(colour="blue", size = 14, face = "bold"))
-        gg <- gg + theme(legend.justification=c(.5,1), legend.position=c(.5,0))
+                         axis.title.y = element_blank())
         gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
         gg <- gg + theme(panel.border = element_blank())
-        ##  gg <- gg + theme(legend.background = element_rect(colour = 'purple', fill = 'pink', size = 1))
+        gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
         
         gg <- gg + geom_point(size=4, aes(group=condition, color=condition)) 
         ##gg <- gg + geom_text()
-        gg <- gg + scale_colour_manual(values=colorPalette,
+        gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
                                        labels=c("Control", "Treated"))
-        gg <- gg + scale_x_continuous(expand = c(.2,0))
+        gg <- gg + scale_x_continuous(expand = c(.1,0))
+        gg <- gg + scale_y_continuous(expand = c(.1,0))
+        
         print(gg)
+
+        ## grid.ls()
+        ## browser()
+        ## downViewport('panel.4-4-4-4')
+        ## pushViewport(dataViewport(fit$points[,1], fit$points[,2]))
+        ## tmp2.x <- as.numeric(convertX( unit(fit$points[,1],'native'), 'in' ))
+        ## tmp2.y <- as.numeric(convertY( unit(fit$points[,2],'native'), 'in' ))
+
+        message("exiting plot")
     })
     
     
 
     ## create line plot for read depth
     output$rdplot <- renderPlot({
+        gene = input$geneSelect
+        if(is.null(gene))
+            return()
+        message("in renderPlot for read depth plot")
+
         mat = data()
         if (is.null(mat))
             return()
@@ -255,20 +287,57 @@ shinyServer(function(input, output, session) {
             return()
         treated = grep("treated", names(datasets))
         control = setdiff(1:length(datasets), treated)
-        
-        gg <- ggplot(melt(mat), aes(name="", x=X2, y=value, group=X1))
-        gg <- gg + theme_bw()
-        ## gg <- gg + theme(legend.position="top",
-        ##                  legend.title = element_text(colour="black", size = 14, face = "bold"),
-        ##                  legend.text = element_text(colour="blue", size = 12, face = "bold"))
-        ## gg <- gg + scale_colour_discrete(name = paste(input$dataspec, ":", input$geneSelect))
-        gg <- gg + ylab("read depth (normalized to RPM)")
-        gg <- gg + xlab("Transcript position")
-        ##gg <- gg + geom_line(aes(color=X1))
-        gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color="red"))
-        gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color="blue"))
-                                             "PEO1-RPT-top200"="PEO1-RPT-top200"
-                                             "PEO1-RPT-top200"="PEO1-RPT-top200"
+
+
+        ## user can select a standard palette or one that is more
+        ## visible to those with R-G color blinkdness.
+        colorPalette <- if (input$colorOption) cbPalette else stdPalette
+
+        if (!input$log) {
+            
+            gg <- ggplot(melt(mat), aes(name="", x=X2,
+                                        y=value,
+                                        group=X1), environment = environment())
+            gg <- gg + theme_bw()
+            gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
+                             legend.text = element_text(size = 14, face = "bold"),
+                             legend.position="top",
+                             legend.direction="horizontal")
+            gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
+            gg <- gg + theme(panel.border = element_blank())
+            gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
+
+            gg <- gg + ylab("read depth (normalized to RPM)")
+            gg <- gg + xlab("Transcript position")
+            gg <- gg + ylim(-max(mat),max(mat))
+            gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
+                                           labels=c("Control", "Treated"))
+            gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
+            gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
+        } else {
+            gg <- ggplot(melt(mat), aes(name="", x=X2,
+                                        y=log2(value+1),
+                                        group=X1), environment = environment())
+            gg <- gg + theme_bw()
+            gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
+                             legend.text = element_text(size = 14, face = "bold"),
+                             legend.position="top",
+                             legend.direction="horizontal")
+            gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
+            gg <- gg + theme(panel.border = element_blank())
+            gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
+
+            gg <- gg + ylab("read depth log2(normalized to RPM)")
+            gg <- gg + xlab("Transcript position")
+            maxy <- max(log2(mat+1))
+            gg <- gg + ylim(-maxy,maxy)
+            gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
+                                           labels=c("Control", "Treated"))
+            gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
+            gg <- gg + geom_line(data=melt(mat[control,,drop=FALSE]), aes(y=-log2(value+1), color=colorPalette[[2]]))
+
+        }
+
         print(gg)
     })
     

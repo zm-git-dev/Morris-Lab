@@ -1,17 +1,26 @@
 
-$(document).ready(function(){
+// Copyright (C) 2013 by Chris Warth
 
+// jQuery code for connecting a bootstrap dropdown button to a Shiny control.
+
+
+// Event handling code to relay events to the shiny binding
+
+$(document).ready(function(){
     $('.dropdown-menu').on('click', 'li', function(evt){
 	// evt.target is the button that was clicked
 	var el = $(evt.target);
 
+	console.log(".dropdown-menu click")
+	console.log(evt.target.id)
 	// Raise an event to signal that the value changed
 	el.trigger("change");
     });
 });
 
 
-// // Select input
+// Establish a Shiny binding for dropmenu button controls.
+
 var dropButtonBinding = new Shiny.InputBinding();
 console.log("extending inputbinding for dropButtonBinding")
 $.extend(dropButtonBinding, {
@@ -57,42 +66,11 @@ $.extend(dropButtonBinding, {
 	var $el = $(el);
 
 	console.log("receiveMessage for dropbuttonBinding")
-	// This will replace all the options
-	if (data.hasOwnProperty('options')) {
-            // Clear existing options and add each new one
-            $el.empty();
-            for (var i = 0; i < data.options.length; i++) {
-		var in_opt = data.options[i];
-
-		var $newopt = $('<option/>', {
-		    value: in_opt.value,
-		    text: in_opt.label
-		});
-
-		// Add selected attribute if present
-		if (in_opt.hasOwnProperty('selected')) {
-		    $newopt.prop('selected', in_opt.selected);
-		}
-
-		$el.append($newopt);
-            }
-	}
-
-	if (data.hasOwnProperty('value'))
-            this.setValue(el, data.value);
-
-	if (data.hasOwnProperty('label'))
-            $(el).parent().find('label[for=' + el.id + ']').text(data.label);
-
-	$(el).trigger('change');
     },
     subscribe: function(el, callback) {
 	console.log("subscribe for dropbuttonBinding")
-	$(el).val(1)
 	$(el).on('change.dropButtonBinding', function(event) {
-	    console.log("change.dropButtonBinding")
-            var $el = $(this);
-	    $(el).val($(el).val() + 1);
+	    console.log("callback dropButtonBinding")
             callback();
 	});
     },
@@ -102,4 +80,4 @@ $.extend(dropButtonBinding, {
     }
 });
 Shiny.inputBindings.register(dropButtonBinding, 'shiny.dropButton');
-console.log("registered for dropbuttonBinding")
+
