@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-11 10:12:26 chris>
+# Time-stamp: <2013-09-13 10:13:42 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -9,8 +9,8 @@
   library(reshape)
 
 ## FIXME - this hardcoded path will not be portable.
-  source("~/Morris-Lab/scripts/R/morrislib.R")
-  source("~/Morris-Lab/scripts/R/profiling/profiling.R")
+  source("../shared/R/morrislib.R")
+  source("../shared/R/profiling.R")
 
 
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
@@ -38,22 +38,22 @@ shinyServer(function(input, output, session) {
             control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
-            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-corrUp-coverage.tsv"
+            attr(datasets, "filename") = "PEO1-RPT-corrUp-coverage.tsv"
         } else if (input$dataspec == "PEO1-RPT-corrDown") {
             control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
-            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-corrDown-coverage.tsv"
+            attr(datasets, "filename") = "PEO1-RPT-corrDown-coverage.tsv"
         } else if (input$dataspec == "PEO1-RPT-top200") {
             control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
-            attr(datasets, "filename") = "~/Downloads/PEO1-RPT-top200-coverage.tsv"
+            attr(datasets, "filename") = "PEO1-RPT-top200-coverage.tsv"
         } else if (input$dataspec == "test") {
             control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
-            attr(datasets, "filename") = "~/Downloads/test.tsv"
+            attr(datasets, "filename") = "test.tsv"
         } else {
             stop(paste0("unknown data specification - ", input$dataspec))
         }
@@ -68,7 +68,7 @@ shinyServer(function(input, output, session) {
         if (is.null(attr(datasets, "filename")))
             return()
         data = read.csv(attr(datasets, "filename"), sep='\t')
-        data = data[, c("symbol", datasets)]
+        data = data[, c("symbol", "transPos", datasets)]
     })
         
 
@@ -118,6 +118,39 @@ shinyServer(function(input, output, session) {
         selectInput("geneSelect", "", choices=choices)
     })
 
+
+    knowngene <- reactive({
+        gene = input$geneSelect
+        if(is.null(gene))
+            return()
+
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        message("in reactive knowngene function")
+
+        if (! is.null(attr(datasets, "filename"))) {
+            ## assume all file-based datasets are human hg19
+            genome <- "hg18"
+        } else {
+            ## Otherwise each dataset will tell us which genome it
+            ## comes from.  Just use the genome from the first
+            ## dataset, as all the datasets should be aligned to the
+            ## same genome.
+            genome <- morris.getGenome(datasets[[1]])
+        }
+        kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
+
+        ## FIXME - there may be more than one knowngene (isoform) for
+        ## a given common name.  consider what the knowngene data is
+        ## being used for and decide if multiple rows in this tables
+        ## makes a difference for your purposes.
+
+
+        return(kg)
+    })
+
+    
     ## Reactive function for retrieving a matrix representing aligned
     ## read positions on a patricular gene for a collection of
     ## datasets.  The datasets might repesent replicated control and
@@ -136,13 +169,20 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(datasets))
             return()
-        message("in reactive data function")
+
+        kg = knowngene()
+        if (is.null(kg))
+            return()
         
+        message("in reactive data function")
+
         if (! is.null(attr(datasets, "filename"))) {
             data <- dataFromFile()
             data <- data[data$symbol==gene,]
-            rownames(data) = 1:nrow(data)
-            mat = as.matrix(t(subset(data,,-symbol)))
+            rownames(data) = data$transPos
+            data = subset(data,,c(-symbol, -transPos))
+            data <- data[order(row.names(data)),]
+            mat = as.matrix(t(data))
             ## extract the list of genes.
             message("exiting reactive data function early")
             return(mat)
@@ -151,10 +191,6 @@ shinyServer(function(input, output, session) {
         genome <- morris.getGenome(datasets[[1]])
         descriptions = morris.fetchinfo(datasets)[,"description", drop=FALSE]
         stats = morris.fetchstats(datasets)
-
-        kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
-        rownames(kg) <- kg$name
-        stopifnot(nrow(kg) == 1)
 
         ## remember the refseq name because that is what identifies each gene in a dataset
         refseq = kg[1,'name']
@@ -280,6 +316,10 @@ shinyServer(function(input, output, session) {
         if (is.null(mat))
             return()
 
+        kg = knowngene()
+        if (is.null(kg))
+            return()
+        
         ## get the datasets, as this will tell us which are control
         ## group and which are the experimental group.
         datasets = inputDatasets()
@@ -287,12 +327,10 @@ shinyServer(function(input, output, session) {
             return()
         treated = grep("treated", names(datasets))
         control = setdiff(1:length(datasets), treated)
-
-
+        
         ## user can select a standard palette or one that is more
-        ## visible to those with R-G color blinkdness.
+        ## visible to those with R-G color blindness.
         colorPalette <- if (input$colorOption) cbPalette else stdPalette
-
         if (!input$log) {
             
             gg <- ggplot(melt(mat), aes(name="", x=X2,

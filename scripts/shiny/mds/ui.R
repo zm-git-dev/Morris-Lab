@@ -1,51 +1,16 @@
 
 
 require(shiny)
-
-# Create the Shiny binding object for our component, and register it:
-#
-dropButton <- function(inputId, 
-                        label, 
-                        choices, 
-                        selected = NULL, 
-                        multiple = FALSE) {
-
-    # resolve names
-    choices <- shiny:::choicesWithNames(choices)
-    
-    menuList <- tags$ul(class = "dropButton dropdown-menu pull-right", id=inputId)
-    
-    # Create tags for each of the options
-    ids <- paste0(inputId, seq_along(choices))
-    liId <- 1
-    for (choice in names(choices)) {
-        thisId <- paste("menu", inputId, liId, sep="-")
-        liId <- liId + 1
-        
-        liTag <- tags$li(tags$a(choices[choice],
-                                id=thisId, href="#"))
-        menuList <- tagAppendChild(menuList, liTag)
-    }
-
-    dropTag <- tagList(
-        singleton(tags$head(tags$script(src = "app.js"))),
-        tags$div(class = "dropdown btn-group navicon",
-                 type="navicon",
-                 tags$a(label, class="btn btn-small dropdown-toggle",
-                        "data-toggle"="dropdown", href="#"),
-                 menuList))
-
-    print(dropTag)
-    dropTag
-}
+source("../shared/R/dropbutton.R")
 
 
 shinyUI(
     pageWithSidebar(
         
         ## Application title
-        headerPanel(list("Characterizing ribosome profiles", img(src="FHlogo.gif", width=200, class="pull-right")),
-                     windowTitle="Profiles"),
+        headerPanel(list("Characterizing ribosome profiles",
+                         img(src="FHlogo.gif", width=200, class="pull-right")),
+                    windowTitle="Profiles"),
         
         ## Sidebar with controls to select the subjects and time span
         sidebarPanel(
