@@ -1,15 +1,14 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-09 15:18:43 chris>
+# Time-stamp: <2013-09-12 14:35:55 chris>
 
   library(shiny)
-  library(ggplot2) # graphs
   library(plyr)  # manipulating data
   library(reshape)
 
 ## FIXME - this hardcoded path will not be portable.
-  source("~/Morris-Lab/scripts/R/morrislib.R")
-  source("~/Morris-Lab/scripts/R/profiling/profiling.R")
+  source("../shared/R/morrislib.R")
+  source("../shared/R/profiling.R")
 
 
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")

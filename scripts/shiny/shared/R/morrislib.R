@@ -423,6 +423,7 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
         ## Calculate the length of exonic sequence
         ##
         kg <- dbGetQuery(con, kquery)
+        stopifnot(nrow(kg) > 0)
         kg <- kg[!duplicated(kg$name),]
         fun <- function(x,y) {sum(as.numeric(y)-as.numeric(x))}
         kg$exonLen <- mapply(fun, strsplit(kg$exonStarts,","), strsplit(kg$exonEnds,","))

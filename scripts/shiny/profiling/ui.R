@@ -1,19 +1,20 @@
 
 
 library(shiny)
-
+source("../shared/R/dropbutton.R")
 
 
 shinyUI(
     pageWithSidebar(
         
         ## Application title
-        headerPanel(list(img(src="UWlogo.jpg", width=200), "Profiles"),
+        headerPanel(list("Profiles", img(src="UWlogo.jpg", width=200, class="pull-right")),
                     windowTitle="Profiles"),
         
         ## Sidebar with controls to select the subjects and time span
         sidebarPanel(
-
+            tags$head( tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
+            tags$head( tags$script(src="app.js")),
             tabsetPanel(
                 tabPanel("Datasets",
                          helpText(p(paste0(
@@ -32,11 +33,6 @@ shinyUI(
                          conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
                          conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
 
-
-                         div(class="span6", checkboxInput(inputId = "log",
-                                 label = "log10 scale", value = FALSE)),
-                         
-                         helpText("Use log scale if read depth has significant vairance"),
                          downloadButton('downloadData', 'Download Output as csv')
 
                          ),
@@ -44,18 +40,25 @@ shinyUI(
                          helpText((paste0(
                              "Select options to control the analysis of ribosome profiles."))),
                          wellPanel(
-                             selectInput(inputId = "colorOption",
-                                         label = "Color pallete:",
-                                         choices = c(
-                                             "standard"="std",
-                                             "R-G colorblind"="rg-cb")
-                                         ),
-                             selectInput(inputId = "rpsOption",
-                                         label = "Read position:",
-                                         choices = c(
-                                             "Stacked reads"="stacked",
-                                             "Centered reads"="centered")
-                                         )
+                             div(class="span6",
+                                 checkboxInput(inputId = "log",
+                                               label = "Log scale",
+                                               value = FALSE)),
+                             helpText("Use log2 scale for read-depth plot."),
+                             
+                             div(class="span6",
+                                 checkboxInput(inputId = "colorOption",
+                                               label = "Alternate palette",
+                                               value = FALSE)),
+                             helpText("Use a color-blind friendly palette."),
+
+                             div(class="span6",
+                                 checkboxInput(inputId = "exonBoundaries",
+                                               label = "Show boundaries",
+                                               value = FALSE)),
+                             helpText("Show exon boundaries on transcript graph.")
+
+
                              )
                          )
 
@@ -66,8 +69,22 @@ shinyUI(
         ## Show the caption a line graph of the daily rate and summary of results 
         mainPanel(
             tabsetPanel(
-                tabPanel("Read Depth", plotOutput("profile")),
-                tabPanel("Table", tableOutput("view"))
+                tabPanel("Read Depth",
+                         with(tags, 
+                              div(class="plot_container", plotOutput("profile"),
+                                  dropButton(inputId = "printmenu1",
+                                             label = tags$img(src="navicon.svg"),
+                                             choices = c(
+                                                 "print"="Print chart",
+                                                 "png"="Download PNG image",
+                                                 "pdf"="Download PDF document")
+                                             )
+                                  )
+                              )
+                         ),
+                tabPanel("Table", tableOutput("view")),
+                tabPanel("NEWS",
+                         includeHTML("NEWS.html"))
                 )
             ) ## end-mainpanel
         )  ## end-pagewithsidebar
