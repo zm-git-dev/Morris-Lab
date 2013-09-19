@@ -86,6 +86,12 @@ shinyUI(
                                            value = FALSE)),
                          helpText("Show labels on scatter plots"),
 
+                         div(class="span6",
+                             checkboxInput(inputId = "bindata",
+                                           label = "Bin the data",
+                                           value = FALSE)),
+                         helpText("Speed up plotting by reducing plot fidelity"),
+
                          
                          helpText("Count read depth at a single point, or across the width of each read."),
                          selectInput(inputId = "rpsOption",

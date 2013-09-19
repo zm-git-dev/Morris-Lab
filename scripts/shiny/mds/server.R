@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-18 16:22:32 chris>
+# Time-stamp: <2013-09-19 13:03:38 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -291,7 +291,7 @@ shinyServer(function(input, output, session) {
         paste("", Sys.time())
     })
     
-    
+
     ## create 2-D scatter plot of multidimensional sampling data
     output$mdsplot <- renderPlot({
         gene = input$geneSelect
@@ -356,8 +356,7 @@ shinyServer(function(input, output, session) {
 
         message("exiting plot")
     })
-    
-    
+
 
     ## create line plot for read depth
     output$rdplot <- renderPlot({
@@ -380,6 +379,15 @@ shinyServer(function(input, output, session) {
         ## group and which are the experimental group.
         treated = grep("treated", names(datasets))
         control = setdiff(1:length(datasets), treated)
+
+        if (input$bindata && ncol(mat) > 3000) {
+            x = 1:ncol(mat)
+            bpt = pretty(x, n=2000)
+            x.cut = cut(x, bpt)
+            mat = t(apply(mat, 1, function(r) sapply(split(r, x.cut), max)))
+            x.mean = sapply(split(x, x.cut), mean)
+            colnames(mat) = x.mean
+        }
         
         ## user can select a standard palette or one that is more
         ## visible to those with R-G color blindness.
