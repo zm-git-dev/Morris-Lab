@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-13 10:13:42 chris>
+# Time-stamp: <2013-09-18 16:22:32 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -17,7 +17,24 @@ cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
 stdPalette <- c("red", "blue")
 
 shinyServer(function(input, output, session) {
-  
+
+    observe({
+        selection = input$printmenu1
+        if (is.null(selection))
+            return()
+        message("Inside printmenu observer")
+        selection = sub("^([^.]*)-.*", "\\1", selection)
+        if (selection == "print") {
+            message("	invoke print")
+        } else if (selection == "png") {
+            message("	invoke png")
+        } else if (selection == "pdf") {
+            message("	invoke pdf")
+        } else {
+            message(paste0("	unknown printmenu command - ", selection) )
+        }
+    })
+    
     ## Reactive function to create a list of datasets.  This list may
     ## contain a set of specifications for a database, or it might be a
     ## specification for retrieving data from a file.
@@ -67,8 +84,10 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(attr(datasets, "filename")))
             return()
-        data = read.csv(attr(datasets, "filename"), sep='\t')
-        data = data[, c("symbol", "transPos", datasets)]
+        data = read.csv(attr(datasets, "filename"), sep='\t',stringsAsFactors=FALSE)
+        data[,'symbol'] = as.factor(data[,'symbol'])
+        data[,'chrm'] = as.factor(data[,'chrm'])
+        data = data[, c("symbol", "transPos", 'exonNumber', datasets)]
     })
         
 
@@ -119,6 +138,11 @@ shinyServer(function(input, output, session) {
     })
 
 
+
+    ## Retreive the gene annotation for the currently selected gene in
+    ## the currently selected datasets.  To do this we must know the
+    ## annotation that was used to assemble the dataset...
+    ##
     knowngene <- reactive({
         gene = input$geneSelect
         if(is.null(gene))
@@ -127,18 +151,24 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(datasets))
             return()
+
+        
+        # This is a temporary measure useful for datasets retrieved from
+        # the database only.  The file-based datasets contain the exon
+        # boundaries so no knowngene lookup is necessary.
+        #
+        # Just return NULL if queried against a file-based dataset
+        if (! is.null(attr(datasets, "filename"))) 
+            return()
+            
         message("in reactive knowngene function")
 
-        if (! is.null(attr(datasets, "filename"))) {
-            ## assume all file-based datasets are human hg19
-            genome <- "hg18"
-        } else {
-            ## Otherwise each dataset will tell us which genome it
-            ## comes from.  Just use the genome from the first
-            ## dataset, as all the datasets should be aligned to the
-            ## same genome.
-            genome <- morris.getGenome(datasets[[1]])
-        }
+        ## Otherwise each dataset will tell us which genome it
+        ## comes from.  Just use the genome from the first
+        ## dataset, as all the datasets should be aligned to the
+        ## same genome.
+        genome <- morris.getGenome(datasets[[1]])
+
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
 
         ## FIXME - there may be more than one knowngene (isoform) for
@@ -150,17 +180,40 @@ shinyServer(function(input, output, session) {
         return(kg)
     })
 
+    spliceJunctions <- reactive({
+        gene = input$geneSelect
+        if(is.null(gene))
+            return()
+
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+
+        message("in reactive data function")
+
+        if (! is.null(attr(datasets, "filename"))) {
+            data <- dataFromFile()
+            data <- data[data$symbol==gene,]
+            print(class(data$transPos))
+            rownames(data) = data$transPos
+            data <- data[order(as.numeric(row.names(data))),]
+            
+            exons <- data[,'exonNumber']
+            splices = as.numeric(rownames(data)[exons[1:(length(exons)-1)]!=exons[-1]])
+            if (length(splices) == 0)
+                splices = NULL
+            message(paste(splices, collapse=","))
+            return(splices)
+        }
+        return()
+    })
     
     ## Reactive function for retrieving a matrix representing aligned
     ## read positions on a patricular gene for a collection of
     ## datasets.  The datasets might repesent replicated control and
     ## treated conditions, and the gene is one particular gene chosen
     ## from among those in the datasets
-    ##
-    ## FIXME: This reactive should be prioritized below that of
-    ## geneChoices, as this routine cannot proceed until a valid gene
-    ## has been selected from the list, and that list is dependent on
-    ## the dataset specification.
+
     data <- reactive({
         gene = input$geneSelect
         if(is.null(gene))
@@ -170,18 +223,14 @@ shinyServer(function(input, output, session) {
         if (is.null(datasets))
             return()
 
-        kg = knowngene()
-        if (is.null(kg))
-            return()
-        
         message("in reactive data function")
 
         if (! is.null(attr(datasets, "filename"))) {
             data <- dataFromFile()
             data <- data[data$symbol==gene,]
-            rownames(data) = data$transPos
-            data = subset(data,,c(-symbol, -transPos))
-            data <- data[order(row.names(data)),]
+            rownames(data) = as.numeric(data$transPos)
+            data = subset(data,,c(datasets))
+            data <- data[order(as.numeric(row.names(data))),]
             mat = as.matrix(t(data))
             ## extract the list of genes.
             message("exiting reactive data function early")
@@ -193,6 +242,10 @@ shinyServer(function(input, output, session) {
         stats = morris.fetchstats(datasets)
 
         ## remember the refseq name because that is what identifies each gene in a dataset
+        kg = knowngene()
+        if (is.null(kg))
+            return()
+        
         refseq = kg[1,'name']
 
         ## create an empty matrix to hold the experimental data
@@ -222,21 +275,19 @@ shinyServer(function(input, output, session) {
     })
     
     
-    ## Create a heading string that is visible at the top of the plot
-    ## area.  In case youdon't remember why you would do this, this
-    ## response element is essentially a debugging aid.  It reponds
-    ## every time the dropdown menu 'printmenu1' is triggered and
-    ## prints the current time.  Because the time string is always
-    ## changing, it is easy to see when this has been triggered.
-    ##
-    ## To see the output from this response, you must have something
-    ## like these tags in your ui.R definition:
-    ##
-    ## 		h3(textOutput("caption")),
-    ##
-    ## the word 'caption' dertermines that the tag is a target of this response element.
-    output$caption <- renderText({
-        foo = input$printmenu1
+    # Create a heading string that is visible at the top of the plot
+    # area.  In case youdon't remember why you would do this, this
+    # response element is essentially a debugging aid.  It reponds
+    # every time the dropdown menu 'printmenu1' is triggered and
+    # prints the current time.  Because the time string is always
+    # changing, it is easy to see when this has been triggered.
+    #
+    # To see the output from this response, you must have something
+    # like these tags in your ui.R definition:
+    #
+    # 		h3(textOutput("debug")),
+    #
+    output$debug <- renderText({
         paste("", Sys.time())
     })
     
@@ -285,12 +336,15 @@ shinyServer(function(input, output, session) {
         gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
         
         gg <- gg + geom_point(size=4, aes(group=condition, color=condition)) 
-        ##gg <- gg + geom_text()
         gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
                                        labels=c("Control", "Treated"))
         gg <- gg + scale_x_continuous(expand = c(.1,0))
         gg <- gg + scale_y_continuous(expand = c(.1,0))
         
+        if (input$showLabels) {
+            gg <- gg + geom_text()
+        }
+
         print(gg)
 
         ## grid.ls()
@@ -307,24 +361,23 @@ shinyServer(function(input, output, session) {
 
     ## create line plot for read depth
     output$rdplot <- renderPlot({
-        gene = input$geneSelect
+        gene <- input$geneSelect
         if(is.null(gene))
             return()
-        message("in renderPlot for read depth plot")
 
-        mat = data()
+        mat <- data()
         if (is.null(mat))
             return()
 
-        kg = knowngene()
-        if (is.null(kg))
+        datasets <- inputDatasets()
+        if (is.null(datasets))
             return()
+
+        message("in renderPlot for read depth plot")
+
         
         ## get the datasets, as this will tell us which are control
         ## group and which are the experimental group.
-        datasets = inputDatasets()
-        if (is.null(datasets))
-            return()
         treated = grep("treated", names(datasets))
         control = setdiff(1:length(datasets), treated)
         
@@ -352,6 +405,7 @@ shinyServer(function(input, output, session) {
                                            labels=c("Control", "Treated"))
             gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
             gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
+
         } else {
             gg <- ggplot(melt(mat), aes(name="", x=X2,
                                         y=log2(value+1),
@@ -373,9 +427,14 @@ shinyServer(function(input, output, session) {
                                            labels=c("Control", "Treated"))
             gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
             gg <- gg + geom_line(data=melt(mat[control,,drop=FALSE]), aes(y=-log2(value+1), color=colorPalette[[2]]))
-
         }
 
+        if (input$showSplices) {
+            splices <- spliceJunctions()
+            if (!is.null(splices)) {
+                gg <- gg + geom_vline(xintercept = splices, alpha=.25,  color="red", linetype="dashed")
+            }
+        }
         print(gg)
     })
     

@@ -1,8 +1,7 @@
 
 
 require(shiny)
-source("../shared/R/dropbutton.R")
-
+source("dropbutton.R")
 
 shinyUI(
     pageWithSidebar(
@@ -75,6 +74,18 @@ shinyUI(
                                            value = FALSE)),
                          helpText("Use a color-blind friendly palette."),
 
+                         div(class="span6",
+                             checkboxInput(inputId = "showSplices",
+                                           label = "Show splice junctions",
+                                           value = FALSE)),
+                         helpText("Indicate splice junctions on read-depth plot."),
+
+                         div(class="span6",
+                             checkboxInput(inputId = "showLabels",
+                                           label = "Label points",
+                                           value = FALSE)),
+                         helpText("Show labels on scatter plots"),
+
                          
                          helpText("Count read depth at a single point, or across the width of each read."),
                          selectInput(inputId = "rpsOption",
@@ -90,14 +101,10 @@ shinyUI(
         
         ## Show tabbed panel with various graphs and tables.
         mainPanel(
-            ## h3(textOutput("caption")),
-            tags$head( tags$link(rel="stylesheet", type="text/css", href="app.css")),
-            tags$head( tags$script(src="app.js")),
+            ## h3(textOutput("debug")),
+            tags$head( tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
             tabsetPanel(
                 tabPanel("Read Depth",
-                         ## bootstrap dropdown menu code shamelessly stolen from
-                         ## http://stackoverflow.com/a/13998987/1135316
-                         ##
                          with(tags, 
                               div(class="plot_container", plotOutput("rdplot"),
                                   dropButton(inputId = "printmenu1",
@@ -106,42 +113,27 @@ shinyUI(
                                                  "print"="Print chart",
                                                  "png"="Download PNG image",
                                                  "pdf"="Download PDF document")
-                                             ),
-                                  ## div(class="dropdown btn-group navicon",
-                                  ##     a(img(src="navicon.svg"),
-                                  ##       class="btn btn-small dropdown-toggle",
-                                  ##       "data-toggle"="dropdown", href="#"),
-                                  ##     ul(class="dropdown-menu pull-right", id="printmenu1",
-                                  ##        li(a("Print chart", href="#")),
-                                  ##        li(class="divider"),
-                                  ##        li(a("Download PNG image", id="alertMe")),
-                                  ##        li(a("Download PDF Document", href="#"))
-                                  ##        )),
-                                  span()
+                                             )
                                   )
                               )
                          ),
                 
                 
                 tabPanel("MDS", 
-                         ## bootstrap dropdown menu code shamelessly stolen from
-                         ## http://stackoverflow.com/a/13998987/1135316
-                         ##
-
                          with(tags, 
                               div(class="plot_container", plotOutput("mdsplot"),
-                                  div(class="dropdown btn-group navicon",
-                                      a(img(src="navicon.svg"), class="btn btn-small dropdown-toggle", "data-toggle"="dropdown", href="#"),
-                                      ul(class="dropdown-menu pull-right", id="printmenu2",
-                                         li(a("Print chart", href="#")),
-                                         li(class="divider"),
-                                         li(a("Download PNG image", href="#")),
-                                         li(a("Download JPEG image", href="#")),
-                                         li(a("Download PDF Document", href="#"))
-                                         ))))
+                                  dropButton(inputId = "printmenu2",
+                                             label = tags$img(src="navicon.svg"),
+                                             choices = c(
+                                                 "print"="Print chart",
+                                                 "png"="Download PNG image",
+                                                 "pdf"="Download PDF document")
+                                             )
+                                  )
+                              )
                          ), 
                 tabPanel("Table", tableOutput("view"))
-                )
+                ) ## end-tabsetPanel
             ) ## end-mainpanel
         )  ## end-pagewithsidebar
     )  ## end-shinyui
