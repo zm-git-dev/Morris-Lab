@@ -14,7 +14,6 @@ shinyUI(
         ## Sidebar with controls to select the subjects and time span
         sidebarPanel(
             tags$head( tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
-            tags$head( tags$script(src="app.js")),
             tabsetPanel(
                 tabPanel("Datasets",
                          helpText(p(paste0(
@@ -24,7 +23,8 @@ shinyUI(
                              uiOutput('orgSelect'),
                              uiOutput('dataSelect'),
                              p(strong("Select gene to analyze")),
-                             uiOutput('geneSelect')
+                             p(strong("Enter gene name, correctly spelt")),
+                             textInput(inputId = "geneSelect", label = " ", value = "Pbsn")
                              ),
 
                          ## It would be nice to have a canvas covering the plot area with
@@ -51,12 +51,25 @@ shinyUI(
                                                label = "Alternate palette",
                                                value = FALSE)),
                              helpText("Use a color-blind friendly palette."),
+                             
+                             div(class="span6",
+                                 checkboxInput(inputId = "showSplices",
+                                               label = "Show junctions",
+                                               value = TRUE)),
+                             helpText("Show exon boundaries on transcript graph."),
 
                              div(class="span6",
-                                 checkboxInput(inputId = "exonBoundaries",
-                                               label = "Show boundaries",
+                                 checkboxInput(inputId = "useCodons",
+                                               label = "Use codons",
                                                value = FALSE)),
-                             helpText("Show exon boundaries on transcript graph.")
+                             helpText("Aggregate reads into codons."),
+
+                             div(class="span6",
+                                 checkboxInput(inputId = "normalize",
+                                               label = "Normalize read counts",
+                                               value = TRUE)),
+                             helpText("Scae counts to total aligned reads.")
+
 
 
                              )
@@ -77,10 +90,31 @@ shinyUI(
                                              choices = c(
                                                  "print"="Print chart",
                                                  "png"="Download PNG image",
-                                                 "pdf"="Download PDF document")
+                                                 "pdf"="Download PDF document"),
+                                             class="pull-right navicon"
                                              )
-                                  )
-                              )
+                                      )
+                              ),
+                         conditionalPanel(
+                             condition="$('div#profile').hasClass('recalculating')",
+                             img(src="loading.gif"))
+                         ),
+                tabPanel("Read Depth",
+                         with(tags, 
+                              div(class="plot_container", plotOutput("profile2"),
+                                  dropButton(inputId = "printmenu2",
+                                             label = tags$img(src="navicon.svg"),
+                                             choices = c(
+                                                 "print"="Print chart",
+                                                 "png"="Download PNG image",
+                                                 "pdf"="Download PDF document"),
+                                             class="pull-right navicon"
+                                             )
+                                      )
+                              ),
+                         conditionalPanel(
+                             condition="$('div#profile').hasClass('recalculating')",
+                             img(src="loading.gif"))
                          ),
                 tabPanel("Table", tableOutput("view")),
                 tabPanel("NEWS",

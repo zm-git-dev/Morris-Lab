@@ -29,6 +29,8 @@ transcript = function(gdata) {
     cdsEnd = function() rpos(if (gdata$strand == '+') { gdata$cdsEnd-1 } else { gdata$cdsStart+1 })
     cdsLength = function() cdsEnd()-cdsStart()+1
     peptideLength = function() cdsLength()/3
+    junctions = function() if (gdata$strand == '+') sapply(starts, rpos) else sapply(ends, rpos)
+
     txStart = function()  rpos(if (gdata$strand == '+') { gdata$txStart } else { gdata$txEnd })
     txEnd = function() rpos(if (gdata$strand == '+') { gdata$txEnd-1 } else { gdata$txStart+1 })
     txLength = function() txEnd()-txStart()+1
@@ -100,7 +102,8 @@ transcript = function(gdata) {
       name2=name2,
       rpos=rpos,
       cpos=cpos,
-      peptideLength=peptideLength
+      peptideLength=peptideLength,
+      junctions=junctions
       )
     class(exported) <- "transcript"
     invisible(exported)

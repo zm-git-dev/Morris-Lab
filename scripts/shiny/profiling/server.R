@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-12 14:35:55 chris>
+# Time-stamp: <2013-09-21 00:43:27 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -86,7 +86,9 @@ shinyServer(function(input, output, session) {
         descriptions = morris.fetchinfo(dataset)[,"description", drop=FALSE]
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
         rownames(kg) <- kg$name
-        stopifnot(nrow(kg) == 1)
+
+        if (nrow(kg) != 1)
+            return()
 
         ## remember the refseq name because that is what identifies each gene in a dataset
         refseq = kg[1,'name']
@@ -97,7 +99,11 @@ shinyServer(function(input, output, session) {
         p = profile(df, kg[refseq,])
 
     })
-    
+
+    output$nrows <- reactive({
+        d = data()
+        return (if (is.null(d)) 0 else nrow(d))
+    })
     
     ## Create a heading based on range of dates selected for printing as a caption
     output$caption <- renderText({
@@ -108,6 +114,67 @@ shinyServer(function(input, output, session) {
     
     ## draw the transcript anf the profile of reads along the transcript
     output$profile <- renderPlot({
+        p = data()
+        if (is.null(p))
+            return()
+
+        dataset = input$dataSelect
+        if (is.null(dataset))
+            return()
+        stats = morris.fetchstats(dataset)
+
+        df <- p$plotpositions()
+        
+        ## count how many reads occur on each position.
+        histdata <- hist(df$rposition, breaks=c(1:p$transcript()$txLength()), plot=FALSE)
+        par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
+
+        par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
+        par(xaxs="r", yaxs="r")  # Extend axis limits by 4% ("i" does no extension)
+
+        if (input$normalize) {
+            ## normalize the count at each position by the total RPM
+            ## of mapped reads in the dataset.
+            histdata$counts <- histdata$counts / (stats[dataset,"aligned_count"]/1e6)
+        }
+        xlim <- c(1,p$transcript()$txLength())
+        
+        plot(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0],
+             type='h', xlim=xlim, lwd=3, lend=2,
+             xlab="", ylab="", cex=1.5, frame.plot=F, xaxt="n")
+        print(par("yaxp"))
+        print(paste0(c(0, max(histdata$counts), 6), collapse=", " ))
+        ticks <- pretty(1:p$transcript()$txLength(), 4)
+        print(paste0(ticks, collapse=", "))
+
+        # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
+        mgp <- par("mgp")
+        print(paste0(mgp, collapse=", "))
+        mgp[2] <- 0.5
+        par(mgp=mgp)
+
+        axis(1, at=ticks, labels=T, lwd=1, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+        grid()
+
+        if (input$showSplices) {
+            ## Add an alpha value to a colour
+            add.alpha <- function(col, alpha=1){
+                if(missing(col))
+                    stop("Please provide a vector of colours.")
+                apply(sapply(col, col2rgb)/255, 2, 
+                      function(x) 
+                      rgb(x[1], x[2], x[3], alpha=alpha))  
+            }
+
+            lightred <- add.alpha("red", alpha=0.7)
+
+            j <- p$transcript()$junctions()
+            sapply(j, function(x) abline(v = x, col=lightred, lty="dashed"))
+        }
+    })
+    
+    ## draw the transcript anf the profile of reads along the transcript
+    output$profile2 <- renderPlot({
         p = data()
         if (is.null(p))
             return()

@@ -422,11 +422,22 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
         ## retrieve the knowngene database.
         ## Calculate the length of exonic sequence
         ##
-        kg <- dbGetQuery(con, kquery)
-        stopifnot(nrow(kg) > 0)
-        kg <- kg[!duplicated(kg$name),]
-        fun <- function(x,y) {sum(as.numeric(y)-as.numeric(x))}
-        kg$exonLen <- mapply(fun, strsplit(kg$exonStarts,","), strsplit(kg$exonEnds,","))
+        kg <- dbGetQuery(con, kquery)   # may return NULL!
+        ##stopifnot(nrow(kg) > 0)
+        message("back from dbGetQuery")
+        if (!is.null(kg) && nrow(kg)) {
+            # FIXME - do we reallt want to filter dusplicated names at this low level?
+            # probably not!
+
+            print(paste("duplicated = ", duplicated(kg$name)))
+            kg <- kg[!duplicated(kg$name),]
+
+            # sum up all the exons of these genes to get a total transcript length.
+            fun <- function(x,y) {sum(as.numeric(y)-as.numeric(x))}
+            kg$exonLen <- mapply(fun, strsplit(kg$exonStarts,","),
+                                 strsplit(kg$exonEnds,","))
+        }
+        message("returning from getknowngenes")
     }, finally = {
         if (exists("con")) 
           dbDisconnect(con)
