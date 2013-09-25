@@ -43,6 +43,7 @@ $.extend(dropButtonBinding, {
 
 
     getValue: function(el) {	
+	console.log("getvalue for dropbuttonBinding");
 	return $(el).data("btn-value");
     },
     setValue: function(el, value) {
@@ -52,6 +53,7 @@ $.extend(dropButtonBinding, {
     subscribe: function(el, callback) {
 	console.log("subscribe for dropbuttonBinding")
 	$(el).on("click.dropButtonBinding", "a[data-value]", function(e) {
+	    console.log("Responging to click.dropButtonBinding")
 	    var i = $(el).data('i') || 0;
             $(el).data('i', i + 1);
 	    $(el).data("btn-value", $(e.target).data("value") + "-" + i);

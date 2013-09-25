@@ -1,12 +1,13 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-19 13:03:38 chris>
+# Time-stamp: <2013-09-25 09:38:34 chris>
 
   library(shiny)
   library(ggplot2) # graphs
   library(grid)
   library(plyr)  # manipulating data
   library(reshape)
+  library(vegan)
 
 ## FIXME - this hardcoded path will not be portable.
   source("../shared/R/morrislib.R")
@@ -19,10 +20,10 @@ stdPalette <- c("red", "blue")
 shinyServer(function(input, output, session) {
 
     observe({
+        message("Inside printmenu observer")
         selection = input$printmenu1
         if (is.null(selection))
             return()
-        message("Inside printmenu observer")
         selection = sub("^([^.]*)-.*", "\\1", selection)
         if (selection == "print") {
             message("	invoke print")
@@ -30,6 +31,9 @@ shinyServer(function(input, output, session) {
             message("	invoke png")
         } else if (selection == "pdf") {
             message("	invoke pdf")
+        } else if (selection == "stop") {
+            message("	invoke stop")
+            shiny::stopApp()
         } else {
             message(paste0("	unknown printmenu command - ", selection) )
         }
@@ -214,7 +218,7 @@ shinyServer(function(input, output, session) {
     ## treated conditions, and the gene is one particular gene chosen
     ## from among those in the datasets
 
-    data <- reactive({
+    profileMatrix <- reactive({
         gene = input$geneSelect
         if(is.null(gene))
             return()
@@ -256,7 +260,6 @@ shinyServer(function(input, output, session) {
             attr(df, "dataset") <- descriptions[dataset,"description"]
             ribo.profile = profile(df, kg[refseq,])
             df <- ribo.profile$plotpositions()
-            xlim <- c(1, ribo.profile$transcript()$txLength())
 
             ## count how many reads occur on each position.
             histdata <- hist(df$rposition, breaks=c(1:ribo.profile$transcript()$txLength()), plot=FALSE)
@@ -273,8 +276,64 @@ shinyServer(function(input, output, session) {
         message("exiting reactive data function")
         return(mat)
     })
-    
-    
+
+
+    ## return a distance matrix calcuated from the read profile data.
+    ##
+    profileDistance <- reactive({
+        mat = profileMatrix()
+        if (is.null(mat))
+            return()
+        d <- dist(mat, method=input$distOption)
+    })
+
+    # use random permutation of the datasets to calcuate a null distribution
+    # and perform an F-test to determine a pseudo p-value.
+    ftestData <- reactive({
+        ## How likely is the grouping that we see?   If the datasets were partitioned into
+        ## groups in a  random fashion, how often would we see a grouping like the observed grouping?
+
+        ## adonis(formula, data, permutations = 999, method = "bray",
+        ##        strata = NULL, contr.unordered = "contr.sum",
+        ##        contr.ordered = "contr.poly", ...)
+
+        ## There are two ways to call vegan::adonis.  The first used raw data
+        ## and the second uses a distance matrix calculated from the raw data.
+        ## In the former case, you pass a matrix of raw measurments to
+        ## adonis() and it calculates the distance matrix for you using the
+        ## algorithm specified by the 'method' argument.  In the second type
+        ## of usage, you precompute a distance matrix from the raw data using
+        ## any algorithm you like and then pass the distance matrix as the
+        ## first argument to adonis().  adonis() can tell which type of usage
+        ## you expect by looking at the type of the first argument; if it is
+        ## of class 'dist' then you have precomputed a distance matrix,
+        ## otherwise you want adonis() to do it for you.
+        ##
+        ## Why would you want to use adonis() one way versus the other?  It is
+        ## usually going to be easier to pass raw data to adonis() and let it
+        ## calculate the distance matrix for you.  However, if you want to try
+        ## out a distance calculation that is not one of the algorithms
+        ## available through adonis() then you will want to precopute your own
+        ## distance matrix and pass it in.
+        distance <- profileDistance()
+        mat = profileMatrix()
+        if (is.null(mat))
+            return()
+
+        ## get the datasets, as this will tell us which are control
+        ## group and which are the experimental group.
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        treated <- grep("treated", names(datasets))
+        control <- datasets[setdiff(1:length(datasets), treated)]
+        aVec <- as.factor(sapply(rownames(mat) %in% control, function(x) if (x) {2} else {3}))
+        permutations <- 10000
+
+        df <- adonis(distance ~ aVec, permutations=permutations)
+        return(df)
+    })
+
     # Create a heading string that is visible at the top of the plot
     # area.  In case youdon't remember why you would do this, this
     # response element is essentially a debugging aid.  It reponds
@@ -292,16 +351,16 @@ shinyServer(function(input, output, session) {
     })
     
 
+    output$coords = renderText({
+        sprintf("hi %.4g %.4g", (input$click)$x, (input$click)$y)
+
+    })
+
     ## create 2-D scatter plot of multidimensional sampling data
     output$mdsplot <- renderPlot({
         gene = input$geneSelect
         if(is.null(gene))
             return()
-
-        mat = data()
-        if (is.null(mat))
-            return()
-        message("in renderPlot for MDS plot")
 
         ## get the datasets, as this will tell us which are control
         ## group and which are the experimental group.
@@ -310,49 +369,52 @@ shinyServer(function(input, output, session) {
             return()
         treated <- grep("treated", names(datasets))
         control <- setdiff(1:length(datasets), treated)
-        
-        condition <- sapply(names(datasets), function(x) !is.na(pmatch('treated',x)))
 
-        d <- dist(mat, method=input$distOption)
-        fit <- cmdscale(d, eig=TRUE, k=2)
+        # get the two dismension points to be drawn on the scatter plot
+        fit <- cmdscale(profileDistance(), eig=TRUE, k=2)
+        df <- data.frame(fit$points)
 
         ## user can select a standard palette or one that is more
         ## visible to those with R-G color blinkdness.
-        colorPalette <- if (input$colorOption) cbPalette else stdPalette
+        palette <- if (input$colorOption) cbPalette else stdPalette
 
-        gg.data = data.frame("x"=fit$points[,1], "y"=fit$points[,2], color=condition)
+        # make a factor colum that indicates the condition (treated or
+        # control) of each dataset
+        cond = NULL
+        cond[grep("treated", names(datasets))] <- "treated"
+        cond[setdiff(1:length(datasets), grep("treated", names(datasets)))] <- "control"
+        cond <- factor(cond)
 
-        gg <- ggplot(gg.data, aes(name="", x=x, y=y, label=rownames(mat)),
-                     environment = environment())
-        gg <- gg + theme_bw()
-        gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
-                         legend.text = element_text(size = 14, face = "bold"),
-                         legend.position="top",
-                         legend.direction="horizontal")
-        gg <- gg + theme(axis.title.x = element_blank(),
-                         axis.title.y = element_blank())
-        gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
-        gg <- gg + theme(panel.border = element_blank())
-        gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
-        
-        gg <- gg + geom_point(size=4, aes(group=condition, color=condition)) 
-        gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
-                                       labels=c("Control", "Treated"))
-        gg <- gg + scale_x_continuous(expand = c(.1,0))
-        gg <- gg + scale_y_continuous(expand = c(.1,0))
-        
-        if (input$showLabels) {
-            gg <- gg + geom_text()
-        }
+        # add a column indicating what color should be used for each point.
+        df <- transform(df, col=palette[cond])
+        print((names(datasets)))
 
-        print(gg)
+        par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
 
-        ## grid.ls()
-        ## browser()
-        ## downViewport('panel.4-4-4-4')
-        ## pushViewport(dataViewport(fit$points[,1], fit$points[,2]))
-        ## tmp2.x <- as.numeric(convertX( unit(fit$points[,1],'native'), 'in' ))
-        ## tmp2.y <- as.numeric(convertY( unit(fit$points[,2],'native'), 'in' ))
+        par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
+        par(xaxs="r", yaxs="r")  # Extend axis limits by 4% ("i" does no extension)
+
+        plot(X2 ~ X1, data=df, col=as.character(col), pch=21, bg=as.character(col),
+             xlab="", ylab="", cex=1.5, frame.plot=F, yaxt="n")
+        print(par("yaxp"))
+        print(paste0(c(min(df$X2), max(df$X2), 6), collapse=", " ))
+        ticks = pretty(c(min(df$X2), max(df$X2)), 3)
+        print(paste0(ticks, collapse=", "))
+
+        # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
+        mgp <- par("mgp")
+        print(paste0(mgp, collapse=", "))
+        mgp[2] <- 0.5
+        par(mgp=mgp)
+
+        axis(2, at=ticks, labels=T, lwd=0, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+        grid()
+
+        # annotate the graph with the pvalue for this gene
+        ftest <- ftestData()
+        pvalue <- ftest$aov.tab[6][1,1]
+        tmp = par("usr")
+        mtext(sprintf("pvalue = %0.4g", pvalue), side=1, line=1, adj=0)
 
         message("exiting plot")
     })
@@ -364,7 +426,7 @@ shinyServer(function(input, output, session) {
         if(is.null(gene))
             return()
 
-        mat <- data()
+        mat <- profileMatrix()
         if (is.null(mat))
             return()
 
@@ -380,13 +442,38 @@ shinyServer(function(input, output, session) {
         treated = grep("treated", names(datasets))
         control = setdiff(1:length(datasets), treated)
 
-        if (input$bindata && ncol(mat) > 3000) {
-            x = 1:ncol(mat)
-            bpt = pretty(x, n=2000)
-            x.cut = cut(x, bpt)
-            mat = t(apply(mat, 1, function(r) sapply(split(r, x.cut), max)))
-            x.mean = sapply(split(x, x.cut), mean)
-            colnames(mat) = x.mean
+        # This routine will plot a subsection of the data if the
+        # current view has been adjusted.  In a normal case, this
+        # would just be done with a call to coord_cartesian, but this
+        # is a not a normal case.  Often the data is so dense that is
+        # makes no sense to plot it all, so the data is first
+        # processed to remove most of the points.  If the view has
+        # been zoomed in then thise adjustment need only be made to
+        # the points that are still visible.
+        #
+        # Coord_cartiseian is still called so that othet annotations,
+        # like the splice junctions do not force the view to expand
+        # again.
+        view = input$viewSlider
+        if (is.null(view)) {
+            warning("viewSlider returned NULL!")
+            view <- c(1,ncol(mat))
+        }
+
+        # If the user has indicated that they would like binning turned on,
+        # and if the width of the current view is greater than some cutoff (3000),
+        # then divide the viewable data up into 2000 regions and keep the max value
+        # within each region.   The X value for each range will be the middle of the range.
+        x <- seq(view[[1]], view[[2]])
+        if (input$bindata && length(x) > 3000) {
+            bpt <-  pretty(x, n=2000)
+            x.cut <- cut(x, bpt)
+            mat <- t(apply(mat[,x], 1, function(r) sapply(split(r, x.cut), max)))
+            x.mean <- sapply(split(x, x.cut), mean)
+            colnames(mat) <- x.mean
+        } else {
+            mat <- mat[,x]
+            colnames(mat) <- x
         }
         
         ## user can select a standard palette or one that is more
@@ -437,6 +524,8 @@ shinyServer(function(input, output, session) {
             gg <- gg + geom_line(data=melt(mat[control,,drop=FALSE]), aes(y=-log2(value+1), color=colorPalette[[2]]))
         }
 
+        gg <- gg + coord_cartesian(xlim = view)
+
         if (input$showSplices) {
             splices <- spliceJunctions()
             if (!is.null(splices)) {
@@ -445,8 +534,19 @@ shinyServer(function(input, output, session) {
         }
         print(gg)
     })
+
     
-    
+    output$viewSlider <- renderUI({
+        mat <- profileMatrix()
+        if (is.null(mat))
+            return()
+        
+        sliderInput(inputId = "viewSlider",
+                    label=" ",
+                    min = 1, max = ncol(mat), step = 1,
+                    value = c(1,ncol(mat)))
+    })
+
     
     ## create summary data for each subject 
     output$view <- renderTable({

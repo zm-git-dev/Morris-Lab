@@ -3,7 +3,7 @@
 
 ## Copyright (C) 2013 by Chris Warth
 
-timestamp <- "dropbutton.R 2013/09/18 13:44:43 chris"
+timestamp <- "dropbutton.R 2013/09/20 17:57:09 chris"
 
 require(shiny)
 
@@ -38,7 +38,7 @@ dropButton <- function(inputId,
     # resolve names
     choices <- shiny:::choicesWithNames(choices)
     
-    menuList <- tags$ul(class = paste("dropButton dropdown-menu",class), id=inputId)
+    menuList <- tags$ul(class = "dropButton dropdown-menu", id=inputId)
     
     # Create tags for each of the options
     ids <- paste0(inputId, seq_along(choices))
@@ -54,8 +54,7 @@ dropButton <- function(inputId,
 
     dropTag <- tagList(
         singleton(tags$head(tags$script(src = .dropButton.js))),
-        tags$div(class = "dropdown btn-group navicon pull-right",
-                 type="navicon",
+        tags$div(class = paste("dropdown btn-group",class),
                  tags$a(label, class="btn btn-small dropdown-toggle",
                         "data-toggle"="dropdown", href="#"),
                  menuList))

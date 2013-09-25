@@ -44,10 +44,6 @@ shinyUI(
                          ## It would be nice to have a canvas covering the plot area with
                          ## a message and a busy indicator.
                          
-                         conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
-                         conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
-
-
                          downloadButton('downloadData', 'Download Output as csv')
                          ),
                 tabPanel("Options",
@@ -77,7 +73,7 @@ shinyUI(
                          div(class="span6",
                              checkboxInput(inputId = "showSplices",
                                            label = "Show splice junctions",
-                                           value = FALSE)),
+                                           value = TRUE)),
                          helpText("Indicate splice junctions on read-depth plot."),
 
                          div(class="span6",
@@ -89,7 +85,7 @@ shinyUI(
                          div(class="span6",
                              checkboxInput(inputId = "bindata",
                                            label = "Bin the data",
-                                           value = FALSE)),
+                                           value = TRUE)),
                          helpText("Speed up plotting by reducing plot fidelity"),
 
                          
@@ -108,35 +104,18 @@ shinyUI(
         ## Show tabbed panel with various graphs and tables.
         mainPanel(
             ## h3(textOutput("debug")),
+            textOutput("coords"),
             tags$head( tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
             tabsetPanel(
                 tabPanel("Read Depth",
-                         with(tags, 
-                              div(class="plot_container", plotOutput("rdplot"),
-                                  dropButton(inputId = "printmenu1",
-                                             label = tags$img(src="navicon.svg"),
-                                             choices = c(
-                                                 "print"="Print chart",
-                                                 "png"="Download PNG image",
-                                                 "pdf"="Download PDF document")
-                                             )
-                                  )
-                              )
+                         plotOutput("rdplot"),
+                         uiOutput('viewSlider'),
+                         conditionalPanel(
+                             condition="$('div#profile').hasClass('recalculating')",
+                             img(src="loading.gif"))
                          ),
-                
-                
-                tabPanel("MDS", 
-                         with(tags, 
-                              div(class="plot_container", plotOutput("mdsplot"),
-                                  dropButton(inputId = "printmenu2",
-                                             label = tags$img(src="navicon.svg"),
-                                             choices = c(
-                                                 "print"="Print chart",
-                                                 "png"="Download PNG image",
-                                                 "pdf"="Download PDF document")
-                                             )
-                                  )
-                              )
+                tabPanel("MDS",
+                         plotOutput("mdsplot", click="click")
                          ), 
                 tabPanel("Table", tableOutput("view"))
                 ) ## end-tabsetPanel
