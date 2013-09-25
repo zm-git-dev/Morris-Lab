@@ -32,7 +32,7 @@ mds <- function(distance, aVec, permutations=10000) {
     pvalue <- df$aov.tab[6][1,1]
 }
 
-pmds <- function(gene, data = NULL) {
+calcPvalue <- function(gene, data = NULL) {
     ## Make a data matrix, where each row is an experiment, and each
     ## column is a transcript position.  The value at each position
     ## represents the read depth at that particular position (col) in one
@@ -57,24 +57,28 @@ pmds <- function(gene, data = NULL) {
     return(p)
 }
 
-filename = "PEO1-RPT-corrUp-coverage.tsv"
+plotPvalue <- function(filename, datasets) {
+    ## read the dataset from a file
+    message("reading dataset...", appendLF = FALSE)
+    data = read.csv(filename, sep='\t')
+    
+    message("done.")
+    data = data[, c("symbol", "transPos", datasets)]
 
-## specifiy which datasets are grouped together
+    ## extract the list of genes.
+    genes = levels(data$symbol)
+
+    pvalues = sapply(X = genes, FUN = calcPvalue, data = data)
+
+    hist(pvalues, n=50, main=paste(filename))
+    Sys.sleep(0.001)
+}
+
+filenames = c("PEO1-RPT-corrUp-coverage.tsv", "PEO1-RPT-corrDown-coverage.tsv", "PEO1-RPT-top200-coverage.tsv")
+
+## specify which datasets are grouped together
 control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
 treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
 datasets = c(control = control, treated = treated)
 
-## read the dataset from a file
-message("reading dataset...", appendLF = FALSE)
-data = read.csv(filename, sep='\t')
-message("done.")
-data = data[, c("symbol", "transPos", datasets)]
-
-## extract the list of genes.
-genes = levels(data$symbol)
-
-pvalues = sapply(X = genes, FUN = pmds, data = data)
-
-
-
-
+sapply(filenames, plotPvalue, datasets)
