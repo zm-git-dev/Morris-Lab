@@ -4,17 +4,32 @@
 </head>
 
 <body>
-<h1>Recent changes</h1>
+<h1>NEWS</h1>
 Most recent are at top.
 <ul>
- <li>Repaced dropdown list with text box for maximum flexibility</li>
-<li>Added navicon (<img src="navicon.svg"/>) with dropdown menu.   The menu is non-functional
-  right now.</li>
-</ul>
+  <li>Added a slider below the plot area to narrow the view of the
+  plot.  The positioning of this control is certainly not ideal, as I
+  would like it to exactly match the width of the plot, however that
+  is not currently feasible.  Perhaps the right answer is to go to a
+  more interactive charting package like Highcharts or GoogleVis.</li>
+
+  <li>Replaced dropdown list with text box for maximum flexibility.
+  This is not the type of control I would like to have here, but it is
+  difficult to find a control that will work with Shiny and which can
+  by dynamically updated with new content every time a dataset is
+  selected.  I tried using Select2 - that seems to handle large
+  datasets better - but it is not yet fully integrated with Shiny and
+  so cannot be dynamically updated with new content.  I probably want
+  a control that is dynamically fed content by an Ajax callback to a
+  database, but Shiny doesn't yet support such an interface (and is
+  unlikely to ever do so).</li>
+
+  <li>Added navicon (<img src="navicon.svg"/>) with dropdown menu.
+  The menu is non-functional right now.</li> </ul>
 
 
 
 <hr>
 <address></address>
-<!-- hhmts start -->Last modified: Fri Sep 13 13:41:22 PDT 2013 <!-- hhmts end -->
+<!-- hhmts start -->Last modified: Mon Sep 23 11:22:35 PDT 2013 <!-- hhmts end -->
 </body> </html>

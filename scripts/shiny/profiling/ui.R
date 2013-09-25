@@ -13,7 +13,8 @@ shinyUI(
         
         ## Sidebar with controls to select the subjects and time span
         sidebarPanel(
-            tags$head( tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
+            tags$head(
+                tags$link(rel="stylesheet", type="text/css", href="css/app.css")),
             tabsetPanel(
                 tabPanel("Datasets",
                          helpText(p(paste0(
@@ -24,7 +25,7 @@ shinyUI(
                              uiOutput('dataSelect'),
                              p(strong("Select gene to analyze")),
                              p(strong("Enter gene name, correctly spelt")),
-                             textInput(inputId = "geneSelect", label = " ", value = "Pbsn")
+                             textInput(inputId = "geneName", label = " ", value = "Pbsn")
                              ),
 
                          ## It would be nice to have a canvas covering the plot area with
@@ -34,7 +35,6 @@ shinyUI(
                          conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
 
                          downloadButton('downloadData', 'Download Output as csv')
-
                          ),
                 tabPanel("Options",
                          helpText((paste0(
@@ -68,10 +68,7 @@ shinyUI(
                                  checkboxInput(inputId = "normalize",
                                                label = "Normalize read counts",
                                                value = TRUE)),
-                             helpText("Scae counts to total aligned reads.")
-
-
-
+                             helpText("Scale counts to total aligned reads.")
                              )
                          )
 
@@ -81,10 +78,12 @@ shinyUI(
         
         ## Show the caption a line graph of the daily rate and summary of results 
         mainPanel(
+            h4(textOutput("caption")),
             tabsetPanel(
                 tabPanel("Read Depth",
                          with(tags, 
-                              div(class="plot_container", plotOutput("profile"),
+                              div(class="plot_container",
+                                  plotOutput("profile"),
                                   dropButton(inputId = "printmenu1",
                                              label = tags$img(src="navicon.svg"),
                                              choices = c(
@@ -92,25 +91,9 @@ shinyUI(
                                                  "png"="Download PNG image",
                                                  "pdf"="Download PDF document"),
                                              class="pull-right navicon"
-                                             )
-                                      )
-                              ),
-                         conditionalPanel(
-                             condition="$('div#profile').hasClass('recalculating')",
-                             img(src="loading.gif"))
-                         ),
-                tabPanel("Read Depth",
-                         with(tags, 
-                              div(class="plot_container", plotOutput("profile2"),
-                                  dropButton(inputId = "printmenu2",
-                                             label = tags$img(src="navicon.svg"),
-                                             choices = c(
-                                                 "print"="Print chart",
-                                                 "png"="Download PNG image",
-                                                 "pdf"="Download PDF document"),
-                                             class="pull-right navicon"
-                                             )
-                                      )
+                                             ),
+                                  uiOutput('viewSlider')
+                                  ),
                               ),
                          conditionalPanel(
                              condition="$('div#profile').hasClass('recalculating')",
