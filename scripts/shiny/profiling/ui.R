@@ -21,11 +21,13 @@ shinyUI(
                              "The graph represents number of aligned reads found on a particular",
                              "gene in the specified datasets."))),
                          wellPanel(
-                             uiOutput('orgSelect'),
+                             uiOutput("orgSelect"),
                              uiOutput('dataSelect'),
-                             p(strong("Select gene to analyze")),
-                             p(strong("Enter gene name, correctly spelt")),
-                             textInput(inputId = "geneName", label = " ", value = "Pbsn")
+                             helpText(strong("Select gene to analyze"),
+                                      strong("Enter gene name, correctly spelt")),
+                             textInput(inputId = "geneName", label = " ", value = "Pbsn"),
+                             downloadButton('downloadGene', "Download this gene")
+
                              ),
 
                          ## It would be nice to have a canvas covering the plot area with
@@ -33,8 +35,8 @@ shinyUI(
                          
                          conditionalPanel(condition="$('div#rdplot').hasClass('recalculating')", img(src="loading.gif")),
                          conditionalPanel(condition="!($('div#rdplot').hasClass('recalculating'))", br()),
+                         downloadButton('downloadDataset', "Download all")
 
-                         downloadButton('downloadData', 'Download Output as csv')
                          ),
                 tabPanel("Options",
                          helpText((paste0(
@@ -90,7 +92,7 @@ shinyUI(
                                                  "print"="Print chart",
                                                  "png"="Download PNG image",
                                                  "pdf"="Download PDF document"),
-                                             class="pull-right navicon"
+                                             class="pull-right navicon hidden"
                                              ),
                                   uiOutput('viewSlider')
                                   ),
