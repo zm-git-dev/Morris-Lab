@@ -28,6 +28,7 @@ shinyUI(
                                              "PEO1-RPT-corrUp"="PEO1-RPT-corrUp",
                                              "PEO1-RPT-corrDown"="PEO1-RPT-corrDown",
                                              "PEO1-RPT-top200"="PEO1-RPT-top200",
+                                             "SOC"="SOC",
                                              "test"="test"
                                              ),
                                          selected = "test"),
@@ -59,12 +60,6 @@ shinyUI(
 
                          p(),
                          div(class="span6",
-                             checkboxInput(inputId = "log",
-                                           label = "log scale",
-                                           value = FALSE)),
-                         helpText("Use log2 scale for read-depth plot."),
-                         
-                         div(class="span6",
                              checkboxInput(inputId = "colorOption",
                                            label = "Alternate palette",
                                            value = FALSE)),
@@ -88,14 +83,36 @@ shinyUI(
                                            value = TRUE)),
                          helpText("Speed up plotting by reducing plot fidelity"),
 
+                         div(class="span6",
+                             checkboxInput(inputId = "log",
+                                           label = "Log scale",
+                                           value = FALSE)),
+                         helpText("Take log2 of read-depth data."),
                          
-                         helpText("Count read depth at a single point, or across the width of each read."),
-                         selectInput(inputId = "rpsOption",
-                                     label = "",
-                                     choices = c(
-                                         "Read depth"="stacked",
-                                         "Centered point"="centered")
-                                     )
+                         div(class="span6",
+                             checkboxInput(inputId = "centerdata",
+                                           label = "Mean center",
+                                           value = FALSE)),
+                         helpText("Center the read depth data around the mean"),
+
+                         div(class="span6",
+                             checkboxInput(inputId = "lowreads",
+                                           label = "Filter low reads",
+                                           value = FALSE)),
+                         helpText("Only consider regions with minimum read depth"),
+
+                         div(class="span6",
+                             checkboxInput(inputId = "usenorm",
+                                           label = "Pre-normalized data",
+                                           value = TRUE)),
+                         helpText("Use pre-normalized data if available"),
+
+                         div(class="span6",
+                             checkboxInput(inputId = "renorm",
+                                           label = "Re-normalized data",
+                                           value = FALSE)),
+                         helpText("Divide each dataset by its sum")
+
                          )
                 )
             ),
