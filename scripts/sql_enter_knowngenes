@@ -1,0 +1,117 @@
+#!/bin/bash
+# usage: sql_enter_alignments 061212_A_MM1 accepted_hits.sam
+#        sql_enter_alignments 061212_A_MM1 accepted_hits.bam
+#
+#  No that won't work because the sam file still has the header on it.
+#
+# Note that this script will NOT work if the <file> is not a text file.
+# e.g. you cannot use this as sql_enter_alignments 061212_A_MM1 /dev/stdin
+# That won't work!   Why?   Because we use the SQL command "LOAD DATA LOCAL INFILE"
+
+function usage {
+    echo "usage: $0 <genome> <refseq_knowngenes.txt_file>"
+    echo "e.g. $0 hg18 hg18_refseq_knowngenes.txt"
+    echo "   . $0 mm9 mm9_refseq_knowngenes.txt"
+}
+
+while getopts ":h" opt; do
+  case $opt in
+    a)
+      usage;
+      exit 1;
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+if [[ $# < 2 ]]; then
+    usage;
+    exit 1;
+fi
+
+GENOME=$1;
+file=$2;
+file=$(readlink -f ${file})
+
+tmpfile=$(mktemp)
+trap "rm -f $tmpfile" EXIT
+
+alignment_cmd=""
+
+case "$(file ${file})" in
+    *ASCII* )
+	# strip the header from a sam file.
+        ;;
+    *"gzip compressed"* )
+        #samtools view ${file} >$tmpfile
+	echo "samtools view -H ${file} | grep @PG | sed 's/^.*CL://'"
+	alignment_cmd="$(samtools view -H ${file} | grep @PG | sed 's/^.*CL://')"	
+	samtools view ${file} >${tmpfile}
+	file="${tmpfile}"
+	;;
+    *)
+	echo "Unrecognized file type - ${file}"
+	exit 1;;
+esac
+
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<\END-SQL
+use morris;
+
+DROP TABLE IF EXISTS `refGene`;
+CREATE TABLE `refGene` (
+  `bin` smallint(5) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `chrom` varchar(255) NOT NULL,
+  `strand` char(1) NOT NULL,
+  `txStart` int(10) unsigned NOT NULL,
+  `txEnd` int(10) unsigned NOT NULL,
+  `cdsStart` int(10) unsigned NOT NULL,
+  `cdsEnd` int(10) unsigned NOT NULL,
+  `exonCount` int(10) unsigned NOT NULL,
+  `exonStarts` longblob NOT NULL,
+  `exonEnds` longblob NOT NULL,
+  `score` int(11) default NULL,
+  `name2` varchar(255) NOT NULL,
+  `cdsStartStat` enum('none','unk','incmpl','cmpl') NOT NULL,
+  `cdsEndStat` enum('none','unk','incmpl','cmpl') NOT NULL,
+  `exonFrames` longblob NOT NULL,
+  KEY `chrom` (`chrom`,`bin`),
+  KEY `name` (`name`),
+  KEY `name2` (`name2`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;
+
+END-SQL
+
+
+mysql -B morris <<END-SQL
+
+use morris;
+
+select "calling load local infile." as 'Msg';
+LOAD DATA LOCAL INFILE '${file}'
+    INTO TABLE refGene;
+
+##DROP TABLE IF EXISTS morris.tmp_knowngenes2;
+##CREATE TABLE morris.tmp_knowngenes2 LIKE morris.knowngenes2;
+
+## Delete the old known genes for this genome.
+##
+select "deleting old knowngenes." as 'Msg';
+delete from morris.knowngenes2 where genome='${GENOME}';
+
+## Copy all columns to knowngenes2 table
+
+select "inserting new knowngenes." as 'Msg';
+INSERT INTO knowngenes2 (genome,name,chrom,strand,txStart,txEnd,cdsStart,cdsEnd,exonCount,exonStarts,exonEnds,score,name2,cdsStartStat,cdsEndStat,exonFrames) 
+SELECT '${GENOME}',name,chrom,strand,txStart,txEnd,cdsStart,cdsEnd,exonCount,exonStarts,exonEnds,score,name2,cdsStartStat,cdsEndStat,exonFrames from refGene r;
+
+DROP TABLE IF EXISTS refGene;
+
+END-SQL
+
+ 
+
+# end of script
