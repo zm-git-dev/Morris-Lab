@@ -1,0 +1,6 @@
+45S	Depletion	exon	12711	12751	.	+	.	gene_id "oligo1"; transcript_id "oligo1"; exon_number "1"; exon_id "oligo1.1";
+45S	Depletion	exon	6955	6995	.	+	.	gene_id "oligo2"; transcript_id "oligo2"; exon_number "1"; exon_id "oligo2.1";
+45S	Depletion	exon	8303	8343	.	+	.	gene_id "oligo3"; transcript_id "oligo3"; exon_number "1"; exon_id "oligo3.1";
+45S	Depletion	exon	12248	12288	.	+	.	gene_id "oligo4"; transcript_id "oligo4"; exon_number "1"; exon_id "oligo4.1";
+45S	Depletion	exon	4871	4911	.	+	.	gene_id "oligo5"; transcript_id "oligo5"; exon_number "1"; exon_id "oligo5.1";
+45S	Depletion	exon	5047	5087	.	+	.	gene_id "oligo6"; transcript_id "oligo6"; exon_number "1"; exon_id "oligo6.1";
