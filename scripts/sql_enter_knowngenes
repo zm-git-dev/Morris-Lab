@@ -31,7 +31,7 @@ if [[ $# < 2 ]]; then
     exit 1;
 fi
 
-expr=$1;
+GENOME=$1;
 file=$2;
 file=$(readlink -f ${file})
 
@@ -43,9 +43,6 @@ alignment_cmd=""
 case "$(file ${file})" in
     *ASCII* )
 	# strip the header from a sam file.
-	alignment_cmd="$(grep @PG ${file} | sed 's/^.*CL://')"
-	sed '/^@/d' ${file} >${tmpfile}
-	file="${tmpfile}"
         ;;
     *"gzip compressed"* )
         #samtools view ${file} >$tmpfile
@@ -60,13 +57,10 @@ case "$(file ${file})" in
 esac
 
 ##(tee /dev/stderr | mysql -B morris) <<END-SQL
-mysql -B morris <<END-SQL
-
+mysql -B morris <<\END-SQL
 use morris;
 
 DROP TABLE IF EXISTS `refGene`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `refGene` (
   `bin` smallint(5) unsigned NOT NULL,
   `name` varchar(255) NOT NULL,
@@ -88,20 +82,35 @@ CREATE TABLE `refGene` (
   KEY `name` (`name`),
   KEY `name2` (`name2`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
-## insert alignments into a temporary tables allowing for duplicate
-## read names
-##
-select "calling load local infile." as 'Msg';
-LOAD DATA LOCAL INFILE '${file}'
-    INTO TABLE refGene  
-   ;
-
-
 
 END-SQL
 
+
+mysql -B morris <<END-SQL
+
+use morris;
+
+select "calling load local infile." as 'Msg';
+LOAD DATA LOCAL INFILE '${file}'
+    INTO TABLE refGene;
+
+##DROP TABLE IF EXISTS morris.tmp_knowngenes2;
+##CREATE TABLE morris.tmp_knowngenes2 LIKE morris.knowngenes2;
+
+## Delete the old known genes for this genome.
+##
+select "deleting old knowngenes." as 'Msg';
+delete from morris.knowngenes2 where genome='${GENOME}';
+
+## Copy all columns to knowngenes2 table
+
+select "inserting new knowngenes." as 'Msg';
+INSERT INTO knowngenes2 (genome,name,chrom,strand,txStart,txEnd,cdsStart,cdsEnd,exonCount,exonStarts,exonEnds,score,name2,cdsStartStat,cdsEndStat,exonFrames) 
+SELECT '${GENOME}',name,chrom,strand,txStart,txEnd,cdsStart,cdsEnd,exonCount,exonStarts,exonEnds,score,name2,cdsStartStat,cdsEndStat,exonFrames from refGene r;
+
+DROP TABLE IF EXISTS refGene;
+
+END-SQL
 
  
 

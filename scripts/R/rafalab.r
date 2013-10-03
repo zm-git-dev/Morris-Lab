@@ -1,0 +1,13 @@
+e=read.csv("http://rafalab.jhsph.edu/688/expression.csv",row.names=1)
+head (e[,1])
+hist(e)
+dim(e)
+rownames(e)[1:10]
+hist(log2(e[,1]))
+e=log2(e)
+m1=rowMeans(e[,1:3])
+m2=rowMeans(e[,4:6])
+a=rowMeans(e)
+plot(a,m2-m1)
+which.min(m1)
+is.array(m1)

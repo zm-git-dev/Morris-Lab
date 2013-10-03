@@ -257,15 +257,16 @@ ${aligner}_out/htseq.bam: ${aligner}_out/htseq_hits.sam
 	mv ${aligner}_out/htseq_s.bam  ${aligner}_out/htseq.bam
 	mv ${aligner}_out/htseq_s.bam.bai  ${aligner}_out/htseq.bam.bai
 
- 
-${aligner}_out/final.bam: ${aligner}_out/accepted_final.sam
+igv: ${aligner}_out/accepted_final.bam ${aligner}_out/genomic.bam
+
+${aligner}_out/accepted_final.bam: ${aligner}_out/accepted_final.sam
 	samtools view -S -b  ${aligner}_out/accepted_final.sam > ${aligner}_out/igv.bam	
 	samtools sort ${aligner}_out/igv.bam ${aligner}_out/igv_s
 	samtools index ${aligner}_out/igv_s.bam
-	mv ${aligner}_out/igv_s.bam  ${aligner}_out/final.bam
-	mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/final.bam.bai
+	mv ${aligner}_out/igv_s.bam  ${aligner}_out/accepted_final.bam
+	mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/accepted_final.bam.bai
 
- ${aligner}_out/genomic.bam :  ${aligner}_out/accepted_hits.bam
+${aligner}_out/genomic.bam :  ${aligner}_out/accepted_hits.bam
 	samtools sort ${aligner}_out/accepted_hits.bam ${aligner}_out/genomic_s
 	samtools index ${aligner}_out/genomic_s.bam
 	mv ${aligner}_out/genomic_s.bam ${aligner}_out/genomic.bam
@@ -294,18 +295,18 @@ sample.bam : rrna.bam
 HTML=/var/www/html
 export EXPERIMENT
 
-install-alignments: rrna.bam sample.bam ${aligner}_out/genomic.bam ${aligner}_out/final.bam
+install-alignments: ${aligner}_out/genomic.bam ${aligner}_out/accepted_final.bam
 	-mkdir -p  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}
 	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bam
 	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bai
 	cp ${aligner}_out/genomic.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam
 	cp ${aligner}_out/genomic.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam.bai
-	cp ${aligner}_out/final.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam
-	cp ${aligner}_out/final.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam.bai
-	cp rrna.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam
-	cp rrna.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam.bai
-	cp sample.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam
-	cp sample.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam.bai
+	cp ${aligner}_out/accepted_final.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam
+	cp ${aligner}_out/accepted_final.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam.bai
+	# cp rrna.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam
+	# cp rrna.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam.bai
+	# cp sample.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam
+	# cp sample.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam.bai
 
 rrna_depth.txt: rrna.bam
 	samtools depth rrna.bam | sort -k 3rn >rrna_depth.txt

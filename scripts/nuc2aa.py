@@ -57,7 +57,9 @@ def main(argv = None):
     Entrez.email = "warthc@uw.washington.edu"     # Always tell NCBI who you are
 
     genes = [
-        "NM_009790"
+	"NM_009804",
+	"NM_010321",
+	"NM_007393"
       ]
     print genes
     for gene in genes:
