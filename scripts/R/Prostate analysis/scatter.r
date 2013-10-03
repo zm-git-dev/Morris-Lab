@@ -1,56 +1,95 @@
 library(Biobase)
 require(genefilter)
 
+tumorSpecific <- c( "Tubb5", "Hist2h2bb", "Nov", "Chgb", "Tmsb4x",
+                   "Hist1h1a", "Dpysl2", "Mki67", "Chga", "Uchl1", "Rrm1",
+                   "Lmnb1", "Cpe", "Eef1a2", "Thbs1")
+epithelial <- c("9530053A07Rik", "Tgm4", "Pbsn", "Rnase1", "Sbp")
+fibroblast <- c("Vim", "Itgb1", "Itga1", "Col1a1", "Col1a2")
 
-control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+# divide the data into two sets - control and treated...
 treated <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+/TR+")
-datasets <- c(control, treated)
+control <- morris.datasets(organism="Mouse", tissue="Prostate", genotype="Ribo+/Col+")
+datasets <- c(treated,control)
+df = morris.genecounts(datasets, group=NULL)
+genome = attr(df, "genome")
 
-ds = morris.genecounts(datasets, group=NULL)
-genome = attr(ds, "genome")
+## Get rid of any rows that are missing data...
+df[is.na(df)] <- 0
 
-df = ds
-## Get rid of any rows containing NA.
-df = df[complete.cases(df),]
+## Identify genes that have too few reads.
+row.sub = apply(df[,grep("103112",names(df),value=TRUE),drop = FALSE], 1, function(row) (any(row >= 30)))
+row.sub = row.sub & apply(df[,grep("030713",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 50))
+row.sub = row.sub & apply(df[,grep("032513",names(df),value=TRUE),drop = FALSE], 1, function(row) any(row >= 100))
 
-## Exclude genes that are highly expressed in epithelial genes.
-exclude = c("9530053A07Rik", "Tgm4", "Pbsn", "Rnase1", "Sbp")
 cn <- morris.commonnames(rownames(df), genome, NULL) 
-df = df[!(cn %in% exclude),]
-
-## Exclude genes that have too few reads.
-row.sub = apply(df[,grep("103112",names(df))], 1, function(row) (any(row >= 30)))
-row.sub = row.sub & apply(df[,grep("030713",names(df))], 1, function(row) any(row >= 50))
-row.sub = row.sub & apply(df[,grep("032513",names(df))], 1, function(row) any(row >= 100))
-df = df[row.sub,]
+stopifnot(nrow(df)==nrow(cn))
+stopifnot(rownames(df)==rownames(cn))
 
 ## Normalize to mapped reads per million mapped reads
-##  http://stackoverflow.com/questions/13830979/#13831155
-df = sweep(df,2,(colSums(df)/(10^6)), '/')
+stopifnot(attr(df,"genome") == genome)
+attr(df,"genome") = genome
+df.raw = df
+attr(df.raw,"genome") = genome
+df.norm = morris.normalize(df.raw, normalization="TC")
 
 ## scale all RPM count to the RPM count of Col1a2
 ## 	First lookup the values for Col1a2
-cn <- morris.commonnames(rownames(df), genome, NULL) 
-reference = df[match("Col1a2", cn),]
+Col1a2 = as.numeric(df.norm[match("Col1a2", cn$common), ])
+stopifnot(!any(Col1a2==0))
+
 ##	Now divide each column in each row by to corresponding column of the reference.
 ##	http://stackoverflow.com/questions/13830979/#13831155
-df <- sweep(df,2,as.numeric(reference), '/')
+df.norm <- sweep(df.norm, 2, Col1a2, '/')
 
-e=(df)
-m1=rowMeans(e[,control])
-m2=rowMeans(e[,treated])
-plot(m1, m2, xlab="Control", ylab="Tramp+",log="xy")
-tstr = paste("control (", length(control), ") vs TRAMP+ (", length(treated), ")")
-title(tstr, sub="min=50,epithel excluded, rpm",cex.main=.7,
-      cex.sub=.6, col.sub="grey73")
+## Exclude genes that have too few reads.
+df.raw <- df.raw[row.sub,,drop=FALSE]
+df.norm <- df.norm[row.sub,,drop=FALSE]
+cn <- cn[row.sub,, drop=FALSE]
 
-s1 = rowSds(e[,1:3])
-s2 = rowSds(e[,4:6])
-ttest=(m2-m1)/sqrt(s1^2/3+s2^2/3)
+## Save the refseq names of fibroblast genes that we will want to highlight
+rows.epithelial <- rownames(df.norm)[cn$common %in% epithelial]
+rows.fibroblast <- rownames(df.norm)[cn$common %in% fibroblast]
+rows.tumorSpecific <- rownames(df.norm)[cn$common %in% tumorSpecific]
+rows.neither <- rownames(df.norm)[!cn$common %in% c(fibroblast, epithelial, tumorSpecific)]
+    
+m1=log2(rowMeans(df.norm[,control]))
+m2=log2(rowMeans(df.norm[,treated]))
+
+xlim=c(min(m1), max(m1))
+ylim=c(min(m2), max(m2))
+plot(m1[rows.neither], m2[rows.neither],
+     xlab="Control", ylab="Tramp+",
+     cex=.7, xlim=xlim, ylim=ylim)
+tstr = paste("Prostate Control (", length(control), ") vs TRAMP+ (", length(treated), ")")
+ststr = "prostate Analysis/scatter.R, rpm,  norm(Col1a2), mean vs. mean"
+title(tstr, sub=ststr, cex.main=1, cex.sub=1, col.sub="grey73")
+    
+points(m1[rows.epithelial], m2[rows.epithelial], pch=18, cex=1.2, col="red")		## diamond
+points(m1[rows.fibroblast], m2[rows.fibroblast], pch=17, cex=1.2, col="blue")		## triangle
+points(m1[rows.tumorSpecific], m2[rows.tumorSpecific], pch='+', cex=1.2, col="green")	## square
+
+textxy(m1[rows.epithelial], m2[rows.epithelial], cn[rows.epithelial,"common"], dcol="red")
+textxy(m1[rows.fibroblast], m2[rows.fibroblast], cn[rows.fibroblast,"common"], dcol="blue")
+textxy(m1[rows.tumorSpecific], m2[rows.tumorSpecific], cn[rows.tumorSpecific,"common"], dcol="green")
+Sys.sleep(0) 
+
+repeat {
+    ans <- identify(m1, m2, n=1, plot=FALSE)
+    if(!length(ans)) break
+    print(paste0("(",m1[ans], ",", m2[ans],")  ",rownames(df.norm)[ans]," ", cn[ans,"common"]))
+}
+
+Sys.sleep(0) 
+s1 = rowSds(df.raw[,control])
+s2 = rowSds(df.raw[,treated])
+ttest=(m2-m1)/sqrt(s1^2/length(control)+s2^2/length(treated))
 hist(ttest,nclass=100)
 
+Sys.sleep(0) 
 ## Calculate the two-tailed T-test statistic
 ## probabiliy of seeing the a value greater than the measured value on 
 ## both the positive and negative extremese.
 pval=2*(1-pt(abs(ttest),4))
 hist(pval, nclass=100)
+Sys.sleep(0) 

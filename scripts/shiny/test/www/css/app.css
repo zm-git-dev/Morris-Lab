@@ -1,0 +1,42 @@
+/* include some app-specific CSS modifications to overlay a button on
+   top of the plot area.  shamelessly stolen from:
+   http://stackoverflow.com/a/16617460/1135316
+   https://groups.google.com/d/msg/shiny-discuss/zRAZ54gBvV8/Rh6xqsa1FOQJ
+   http://stackoverflow.com/a/12373549/1135316
+*/
+
+.plot_container {
+    position:	relative; 
+    overflow:	visible;
+    /* display:inline-block; */
+    /* text-align:center; */
+    /* border:1px solid red; */
+}
+
+
+.navicon {
+    position:absolute;
+    top:1%;
+    right:1%;
+    /* width:100px; */
+    /* height:30px; */
+}
+
+.tab-content {
+    overflow: visible;
+}
+
+.dropdown-menu
+{
+    float:right;
+    left: -99%;
+
+}
+
+## http://stackoverflow.com/a/13068914/1135316
+.btn .btn-group .dropdown .dropdown-menu {
+  background: none !important; 
+  border: 0 !important;
+}
+
+
