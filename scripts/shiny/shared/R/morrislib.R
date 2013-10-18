@@ -429,7 +429,7 @@ morris.getknowngenes <- function(genome, gene=NULL, group=NULL) {
             # FIXME - do we reallt want to filter dusplicated names at this low level?
             # probably not!
 
-            print(paste("duplicated = ", duplicated(kg$name)))
+            ##print(paste("duplicated = ", duplicated(kg$name)))
             kg <- kg[!duplicated(kg$name),]
 
             # sum up all the exons of these genes to get a total transcript length.

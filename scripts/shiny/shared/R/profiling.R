@@ -24,6 +24,9 @@ transcript = function(gdata) {
     ends <- as.numeric(strsplit(gdata$exonEnds,",")[[1]])
     elens <- ends - starts
     transcriptLength <- sum(elens)
+    message(paste("exon starts: ", paste(as.character(starts), collapse=",")))
+    message(paste("exon ends: ", paste(as.character(ends), collapse=",")))
+    message(paste("transcript length: ", transcriptLength))
 
     cdsStart = function() rpos(if (gdata$strand == '+') { gdata$cdsStart } else { gdata$cdsEnd })
     cdsEnd = function() rpos(if (gdata$strand == '+') { gdata$cdsEnd-1 } else { gdata$cdsStart+1 })
@@ -246,8 +249,7 @@ profile <- function(df, gene.data) {
 # Should return a summary object (and not print it!)
 # Need a unique class for it ("fsummary")
 summary.profile <- function(self,...) {
-    res <- summary(self$alignments())
-    res
+    summary(self$alignments())
 }
 
 

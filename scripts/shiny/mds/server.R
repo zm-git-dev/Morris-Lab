@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-25 09:38:34 chris>
+# Time-stamp: <2013-09-30 13:57:27 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -70,6 +70,21 @@ shinyServer(function(input, output, session) {
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
             datasets = c(control = control, treated = treated)
             attr(datasets, "filename") = "PEO1-RPT-top200-coverage.tsv"
+        } else if (input$dataspec == "SOC") {
+            control <- c(
+                "Benign_1312_501369.norm", "Benign_1675_224804.norm", "Benign_441_206864.norm",
+                "Benign_2638_223151.norm", "Benign_7012_315111.norm", "Benign_7609_361548.norm",
+                "Benign_4764_251506.norm", "Benign_1069_501203.norm", "Benign_116_100831.norm",
+                "Benign_2186_509428.norm")
+
+            treated <- c(
+                "SOC_7637_361542.norm", "SOC_7777_371281.norm", "SOC_12523_494920.norm",
+                "SOC_849_206653.norm", "SOC_9547_467919.norm", "SOC_6208_299803.norm",
+                "SOC_5991_294171.norm", "SOC_2745_226696.norm", "SOC_5959_278682.norm",
+                "SOC_13451_492771.norm")
+
+            datasets = c(control = control, treated = treated)
+            attr(datasets, "filename") = "SOC-merged.tsv"
         } else if (input$dataspec == "test") {
             control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
             treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
@@ -78,6 +93,17 @@ shinyServer(function(input, output, session) {
         } else {
             stop(paste0("unknown data specification - ", input$dataspec))
         }
+
+        if (!input$usenorm) {
+            attr.saved <- attributes(datasets)
+            base <- sub("^(.*)\\..*", "\\1", datasets)
+            datasets <- paste0(base, ".depth")
+            attributes(datasets) <- attr.saved
+
+            message("datasets:")
+            message(paste(datasets, collapse=","))
+        }
+
         return(datasets)
     })
 
@@ -88,10 +114,24 @@ shinyServer(function(input, output, session) {
         datasets = inputDatasets()
         if (is.null(attr(datasets, "filename")))
             return()
-        data = read.csv(attr(datasets, "filename"), sep='\t',stringsAsFactors=FALSE)
-        data[,'symbol'] = as.factor(data[,'symbol'])
-        data[,'chrm'] = as.factor(data[,'chrm'])
-        data = data[, c("symbol", "transPos", 'exonNumber', datasets)]
+
+        datafile <- attr(datasets, "filename")
+        base <- sub("^(.*)\\..*", "\\1",datafile)
+        if (file.exists(paste0(base, ".Rda"))) {
+            load(paste0(base, ".Rda"))
+        } else {
+            data <- read.csv(datafile, sep='\t',stringsAsFactors=FALSE)
+            data[,'symbol'] <- as.factor(data[,'symbol'])
+            data[,'chrm'] <- as.factor(data[,'chrm'])
+            save("data", file=paste0(base, ".Rda"))
+        }
+        # don't resrict what columns are available in the dataset here.
+        # do that later when we build the matrix
+        message("columns of data:")
+        message(paste(names(data), collapse=","))
+        return(data)
+
+        ##data <- data[, c("symbol", "transPos", 'exonNumber', datasets)]
     })
         
 
@@ -99,13 +139,13 @@ shinyServer(function(input, output, session) {
     # datasets as specified by inputDatasets.
     geneChoices <- reactive({
         message("in gene choices")
-        datasets = inputDatasets()
+        datasets <- inputDatasets()
         if (is.null(datasets))
             return()
 
         # if the data is stored in a file, we'll pretty much have to read the whole thing in.
         if (! is.null(attr(datasets, "filename"))) {
-            data = dataFromFile()
+            data <- dataFromFile()
             ## extract the list of genes.
             return(levels(data$symbol))
         }
@@ -184,6 +224,8 @@ shinyServer(function(input, output, session) {
         return(kg)
     })
 
+
+    # return the transcript positions of splice junctions in the currently selected gene
     spliceJunctions <- reactive({
         gene = input$geneSelect
         if(is.null(gene))
@@ -193,20 +235,13 @@ shinyServer(function(input, output, session) {
         if (is.null(datasets))
             return()
 
-        message("in reactive data function")
+        message("in reactive spliceJunctions function")
 
         if (! is.null(attr(datasets, "filename"))) {
             data <- dataFromFile()
-            data <- data[data$symbol==gene,]
-            print(class(data$transPos))
-            rownames(data) = data$transPos
-            data <- data[order(as.numeric(row.names(data))),]
-            
-            exons <- data[,'exonNumber']
-            splices = as.numeric(rownames(data)[exons[1:(length(exons)-1)]!=exons[-1]])
-            if (length(splices) == 0)
-                splices = NULL
-            message(paste(splices, collapse=","))
+            data <- data[data$symbol == gene,]
+            isplices <- which(diff(data$exonNumber) != 0)
+            splices <- data[isplices, 'transPos']
             return(splices)
         }
         return()
@@ -227,17 +262,32 @@ shinyServer(function(input, output, session) {
         if (is.null(datasets))
             return()
 
-        message("in reactive data function")
+        message("in reactive profileMatrix function")
 
         if (! is.null(attr(datasets, "filename"))) {
             data <- dataFromFile()
             data <- data[data$symbol==gene,]
             rownames(data) = as.numeric(data$transPos)
-            data = subset(data,,c(datasets))
+            data = subset(data,select=datasets)
             data <- data[order(as.numeric(row.names(data))),]
             mat = as.matrix(t(data))
-            ## extract the list of genes.
-            message("exiting reactive data function early")
+
+            if (input$log) {
+                # Take the log of each datapoint
+                mat <- log10(mat+1)
+            }
+            
+            if (input$centerdata) {
+                # center each dataset about its mean
+                mat <- t(scale(t(mat), center=TRUE, scale=FALSE))
+            }
+            
+            if (input$renorm) {
+                # scale each dataset by the total number of reads in that gene.
+                mat <- t(scale(t(mat), center=FALSE, scale=apply(mat,1,sum)))
+            }
+            
+            message("exiting reactive profileMatrix function early")
             return(mat)
         }
         
@@ -352,8 +402,26 @@ shinyServer(function(input, output, session) {
     
 
     output$coords = renderText({
-        sprintf("hi %.4g %.4g", (input$click)$x, (input$click)$y)
+        gene = input$geneSelect
+        if(is.null(gene))
+            return()
 
+        ## get the datasets, as this will tell us which are control
+        ## group and which are the experimental group.
+        datasets = inputDatasets()
+        if (is.null(datasets))
+            return()
+        treated <- grep("treated", names(datasets))
+        control <- setdiff(1:length(datasets), treated)
+
+        # get the two dismension points to be drawn on the scatter plot
+        fit <- cmdscale(profileDistance(), eig=TRUE, k=2)
+        df <- data.frame(fit$points)
+
+        x = (input$click)$x
+        y = (input$click)$y
+        w <- with(df, which.min( (X1-x)^2 + (X2-y)^2 ))
+        sprintf("%s", datasets[[w]])
     })
 
     ## create 2-D scatter plot of multidimensional sampling data
@@ -413,7 +481,6 @@ shinyServer(function(input, output, session) {
         # annotate the graph with the pvalue for this gene
         ftest <- ftestData()
         pvalue <- ftest$aov.tab[6][1,1]
-        tmp = par("usr")
         mtext(sprintf("pvalue = %0.4g", pvalue), side=1, line=1, adj=0)
 
         message("exiting plot")
@@ -444,12 +511,11 @@ shinyServer(function(input, output, session) {
 
         # This routine will plot a subsection of the data if the
         # current view has been adjusted.  In a normal case, this
-        # would just be done with a call to coord_cartesian, but this
-        # is a not a normal case.  Often the data is so dense that is
-        # makes no sense to plot it all, so the data is first
-        # processed to remove most of the points.  If the view has
-        # been zoomed in then thise adjustment need only be made to
-        # the points that are still visible.
+        # would just be done with a call to coord_cartesian.  However
+        # our data is often so dense that it makes sense to process it
+        # to remove most of the points.  If the view has been zoomed
+        # in then these adjustment need to be made to the points that
+        # are still visible.
         #
         # Coord_cartiseian is still called so that othet annotations,
         # like the splice junctions do not force the view to expand
@@ -460,10 +526,22 @@ shinyServer(function(input, output, session) {
             view <- c(1,ncol(mat))
         }
 
-        # If the user has indicated that they would like binning turned on,
-        # and if the width of the current view is greater than some cutoff (3000),
-        # then divide the viewable data up into 2000 regions and keep the max value
-        # within each region.   The X value for each range will be the middle of the range.
+        # Bin the data!
+        # This is done to make graphing significantly faster without sacrificing much fidelity.
+        #
+        # If the user has checked the "binning" option, AND if the
+        # width of the current plot view is greater than some cutoff
+        # (3000 units), then divide the viewable data up into 2000
+        # regions and keep the max value within each region.  The X
+        # value for each range will be the middle of the range.  When
+        # plotting 8 datasets across an 18K bp gene, this technique
+        # reduced the number of points from (18K x 8) to (2K x 8).
+        #
+        # How were the magic numbers 2000 and 3000 chosen?  2000 was
+        # chosen because the graph still looked good at that
+        # resolution on my macbook air screen.  3000 because I didn't
+        # see much point in binning if the complete data was only a
+        # small fraction wider than the target resolution.
         x <- seq(view[[1]], view[[2]])
         if (input$bindata && length(x) > 3000) {
             bpt <-  pretty(x, n=2000)
@@ -479,50 +557,28 @@ shinyServer(function(input, output, session) {
         ## user can select a standard palette or one that is more
         ## visible to those with R-G color blindness.
         colorPalette <- if (input$colorOption) cbPalette else stdPalette
-        if (!input$log) {
+        yaxis_label  <- if (input$log) "read depth log2(normalized to RPM)" else "read depth (normalized to RPM)"
             
-            gg <- ggplot(melt(mat), aes(name="", x=X2,
-                                        y=value,
-                                        group=X1), environment = environment())
-            gg <- gg + theme_bw()
-            gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
-                             legend.text = element_text(size = 14, face = "bold"),
-                             legend.position="top",
-                             legend.direction="horizontal")
-            gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
-            gg <- gg + theme(panel.border = element_blank())
-            gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
 
-            gg <- gg + ylab("read depth (normalized to RPM)")
-            gg <- gg + xlab("Transcript position")
-            gg <- gg + ylim(-max(mat),max(mat))
-            gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
-                                           labels=c("Control", "Treated"))
-            gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
-            gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
+        gg <- ggplot(melt(mat), aes(name="", x=X2,
+                                    y=value,
+                                    group=X1), environment = environment())
+        gg <- gg + theme_bw()
+        gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
+                         legend.text = element_text(size = 14, face = "bold"),
+                         legend.position="top",
+                         legend.direction="horizontal")
+        gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
+        gg <- gg + theme(panel.border = element_blank())
+        gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
 
-        } else {
-            gg <- ggplot(melt(mat), aes(name="", x=X2,
-                                        y=log2(value+1),
-                                        group=X1), environment = environment())
-            gg <- gg + theme_bw()
-            gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
-                             legend.text = element_text(size = 14, face = "bold"),
-                             legend.position="top",
-                             legend.direction="horizontal")
-            gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
-            gg <- gg + theme(panel.border = element_blank())
-            gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
-
-            gg <- gg + ylab("read depth log2(normalized to RPM)")
-            gg <- gg + xlab("Transcript position")
-            maxy <- max(log2(mat+1))
-            gg <- gg + ylim(-maxy,maxy)
-            gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
-                                           labels=c("Control", "Treated"))
-            gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
-            gg <- gg + geom_line(data=melt(mat[control,,drop=FALSE]), aes(y=-log2(value+1), color=colorPalette[[2]]))
-        }
+        gg <- gg + ylab("read depth (normalized to RPM)")
+        gg <- gg + xlab("Transcript position")
+        gg <- gg + ylim(-max(mat),max(mat))
+        gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
+                                       labels=c("Control", "Treated"))
+        gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]), aes(color=colorPalette[[1]]))
+        gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
 
         gg <- gg + coord_cartesian(xlim = view)
 

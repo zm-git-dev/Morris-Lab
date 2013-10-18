@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-24 17:24:02 chris>
+# Time-stamp: <2013-10-03 13:00:02 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -9,6 +9,7 @@
 ## FIXME - this hardcoded path will not be portable.
   source("../shared/R/morrislib.R")
   source("../shared/R/profiling.R")
+source("global.R")
 
 
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
@@ -35,7 +36,7 @@ shinyServer(function(input, output, session) {
         }
     })
 
-    output$downloadData <- downloadHandler(
+    output$downloadPng <- downloadHandler(
         filename = function() {
             paste('data-', Sys.Date(), '.png', sep='')
         },
@@ -58,7 +59,7 @@ shinyServer(function(input, output, session) {
             return()
 
         genome <- morris.getGenome(dataset)
-        df = morris.genecounts(dataset)
+        df <- morris.genecounts(dataset)
 
         topGenes = rownames(df[order(df[,1], decreasing=TRUE)[1:10],,drop=FALSE])
         kg = morris.getknowngenes(genome, gene=topGenes)
@@ -71,13 +72,17 @@ shinyServer(function(input, output, session) {
         datasets = morris.datasets()
         if(is.null(datasets))
             return()
-        df = morris.fetchinfo(datasets)
-        organisms = unique(df$organism)
-        selectInput(inputId = "orgSelect",
+        df <- morris.fetchinfo(datasets)
+        organisms <- unique(df$organism)
+        selectInput(inputId <- "orgSelect",
                     label="",
                     choices=organisms)
     })
 
+
+    # Populate the selection control for choosing the dataset.  The
+    # list of available datasets is chosen from among all datasets in
+    # the database that have a matching organism field and whose description field is not empty.
     output$dataSelect <- renderUI({
         org = input$orgSelect
         if(is.null(org))
@@ -119,9 +124,11 @@ shinyServer(function(input, output, session) {
 
         print(paste0("retrieving data for ", dataset))
         df <- morris.getalignments(dataset, refseq)
-        attr(df, "dataset") <- descriptions[dataset,"description"]
+        attr(df, "dataset") <- dataset
+        attr(df, "description") <- descriptions[dataset,"description"]
+        attr(df, "refseq_name") <- refseq
+        attr(df, "common_name") <- gene
         p <- profile(df, kg[refseq,])
-
     })
 
     ## Create a heading for debugging....
@@ -146,6 +153,27 @@ shinyServer(function(input, output, session) {
         df <- p$plotpositions()
         
         ## count how many reads occur on each position.
+        message(paste("gene = ", input$geneName))
+        message(paste("range of df$rposition = ", paste(range(df$rposition), collapse=", ")))
+        message(paste("range of breaks = ", paste(range(1:p$transcript()$txLength()), collapse=", ")))
+
+        # temporary hack to get around a bug.
+
+        # Dave reported "For some genes, in some datasets, I get [an]
+        # error message: "some 'x' not counted; maybe 'breaks' do not
+        # span range of 'x'".  e.g. Arg1 in 'young calorie restricted"
+        # or Actb in all datasets from that experiment."
+        #
+        # This is a temporary hack to get around this error.  The underlying cause is that some reads the should be
+        # wholly inside the transcript are somehow being migrated outside the bounds of the transcript.  I suspect this has
+        # to do with a miscalculation of read position on negative-strand genes.
+        #
+        # print out the reads that fall outside the transcript (these would cause an error if they remained).
+        print(df[df$rposition > p$transcript()$txLength(),,drop=FALSE])
+        # remove reads that fall outside the transcript.
+        df <- df[df$rposition < p$transcript()$txLength(),,drop=FALSE]
+
+
         histdata <- hist(df$rposition, breaks=c(1:p$transcript()$txLength()), plot=FALSE)
         par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
 
@@ -175,9 +203,10 @@ shinyServer(function(input, output, session) {
         # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
         ticks <- pretty(view, 4)
         mgp <- par("mgp")
-        mgp[2] <- 0.5
+        mgp[3] <- 0.5
         par(mgp=mgp)
         axis(1, at=ticks, labels=T, lwd=1, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+        axis(1, at=c(p$transcript()$cdsStart(), p$transcript()$cdsEnd()), labels=T, lwd=4, lwd.ticks=2, lty="solid", col.ticks="red",  cex.axis=0.9, font.axis=2)
 
         # draw a subtle grid in the background of the plot
         grid(nx=0)
@@ -201,11 +230,13 @@ shinyServer(function(input, output, session) {
         }
 
         # annotate the graph with the name of the dataset and the number of reads.
-        # The usr coordinates appear to change after plot(), so fetch the coordinates
-        # again before positioning the labels.
-        tmp = par("usr")
-        text(xlim[1], tmp[4], attr(df, "dataset"), adj=c(0,1.2), new=TRUE)
-        text(xlim[2], tmp[4], paste0(nrow(df), " reads"), adj = c( 1, 1.2 ), new=TRUE)
+        df = p$alignments()
+        mtext(sprintf("dataset: %s / %s    gene: %s / %s",
+                      attr(df, "description"), attr(df,"dataset"),
+                      attr(df,"common_name"), attr(df, "refseq_name")),
+              side=1, line=2, adj=0)
+        mtext(sprintf("%d total reads", nrow(df)), side=1, line=2, adj=1)
+
 
     })
     
@@ -222,19 +253,41 @@ shinyServer(function(input, output, session) {
 
     ## create summary data for each subject 
     output$view <- renderTable({
-        mat = rptData()
-        if (is.null(mat))
+        p = rptData()
+        if (is.null(p))
             return()
-        mat
+        summary(p)
     })
     
     ## make data downloadable
-    output$downloadData <- downloadHandler(
-        ## filename = function() { paste(input$data, '.csv', sep='') }, in tutorial to distinguish files trickier with my work
-        filename = function() { paste('results.csv', sep='') },
+    output$downloadGene <- downloadHandler(
+        filename = function() { paste0(input$geneName, '.csv') },
         content = function(file) {
-            write.csv(rptData(), file)
+            p <- rptData()
+            if (is.null(p))
+                return()
+            df <- p$alignments()
+            df <- subset(df,,c(-feature))
+            print(head(df))
+            write.csv(df, file)
         }
         )
+
+    # download a table of gene read counts, but only include reads
+    # whose center falls within the CDS portion of the gene
+    output$downloadDataset <- downloadHandler(
+        filename = function() { paste0(input$dataSelect, '.csv') },
+        content = function(file) {
+            dataset = input$dataSelect
+            if (is.null(dataset))
+                return()
+
+            df <- getCDSAlignments(dataset)
+
+            print(head(df))
+            write.csv(df, file)
+        }
+        )
+    
     
 })

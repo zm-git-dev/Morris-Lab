@@ -30,25 +30,13 @@
 {
     float:right;
     left: -99%;
+
 }
 
-/* http://stackoverflow.com/a/13068914/1135316 */
+## http://stackoverflow.com/a/13068914/1135316
 .btn .btn-group .dropdown .dropdown-menu {
   background: none !important; 
   border: 0 !important;
 }
 
 
-.control-group {
-    display: inline-block;
-    /* vertical-align: top; */
-}
-
-.makeHorizontal{
-  float:left;
-  padding-left:20px;
-}
-
-#resetSlider {
-    class: btn-small
-}

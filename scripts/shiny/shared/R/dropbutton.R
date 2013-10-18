@@ -3,7 +3,7 @@
 
 ## Copyright (C) 2013 by Chris Warth
 
-timestamp <- "dropbutton.R 2013/09/20 17:57:09 chris"
+timestamp <- "dropbutton.R 2013/09/24 12:06:58 chris"
 
 require(shiny)
 
@@ -48,7 +48,7 @@ dropButton <- function(inputId,
         liId <- liId + 1
         
         liTag <- tags$li(tags$a(choices[choice],
-                             id=thisId, "data-value"=choice, href="#"))
+                             id=thisId, "data-value"=choice, href="#", class="shiny-download-link"))
         menuList <- tagAppendChild(menuList, liTag)
     }
 
