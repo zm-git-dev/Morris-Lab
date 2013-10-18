@@ -147,8 +147,8 @@ END-SQL
  
 if [ ! -z "$alignment_cmd" ]
 then
-##mysql -B morris <<END-SQL
-(tee /dev/stderr | mysql -B morris) <<END-SQL
+mysql -B morris <<END-SQL
+##(tee /dev/stderr | mysql -B morris) <<END-SQL
 
 ## update the record of the command used to generate these alignments.
 ##

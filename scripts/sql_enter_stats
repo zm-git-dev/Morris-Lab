@@ -39,6 +39,23 @@ while getopts ":hm:d:g:" opt; do
   esac
 done
 
+
+
+case $genome in
+    hg18|hg19)
+	organism="Human";
+	;;
+    mm9|mm10)
+	organism="Mouse";
+	;;
+    :)
+	organism="Human";
+	;;
+esac
+
+
+
+
 shift $(($OPTIND-1))
 echo $@
 if [[ $# < 1 ]]; then
@@ -80,6 +97,12 @@ CREATE PROCEDURE createdataset (expr char(50))
 BEGIN
     DECLARE expr_id INT(4);
     SET expr_id=(SELECT id FROM experiments_tbl WHERE name LIKE expr);
+    IF expr_id IS NULL THEN
+	 INSERT IGNORE INTO \`morris\`.\`experiments_tbl\` (\`name\`,\`description\`, \`organism\`) VALUES (expr, '${expr} description', '${organism}');
+
+    END IF;
+    SET expr_id=(SELECT id FROM experiments_tbl WHERE name LIKE expr);
+
     IF expr_id IS NOT NULL THEN
 
 	 ## 'IGNORE' tells INSERT to only generate a warning if the
