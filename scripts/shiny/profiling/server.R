@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-30 16:03:51 chris>
+# Time-stamp: <2013-10-03 13:00:02 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -79,6 +79,10 @@ shinyServer(function(input, output, session) {
                     choices=organisms)
     })
 
+
+    # Populate the selection control for choosing the dataset.  The
+    # list of available datasets is chosen from among all datasets in
+    # the database that have a matching organism field and whose description field is not empty.
     output$dataSelect <- renderUI({
         org = input$orgSelect
         if(is.null(org))
