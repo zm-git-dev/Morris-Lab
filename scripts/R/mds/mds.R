@@ -179,7 +179,7 @@ plotPvalue <- function(filename, datasets) {
     stopifnot(!is.null(genes))
 
     pvalues = sapply(X = genes, FUN = calcPvalue, data = data)
-
+ 
     hist(pvalues, n=50, main=paste(filename))
     Sys.sleep(0.001)
     pvalues <- pvalues[order(pvalues)]
