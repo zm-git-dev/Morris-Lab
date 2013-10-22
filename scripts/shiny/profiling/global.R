@@ -32,9 +32,9 @@ getCDSAlignments <- function(dataset, group=NULL) {
         ## as a common key.   Oddly eough it is faster to do this in R than it is
         ## in SQL.
 
-        query <- paste(sprintf('select a.feature, k.geneSymbol as "common", count(*) as "%s" from ', dataset),
+        query <- paste(sprintf('select a.feature, k.name2 as "common", count(*) as "%s" from ', dataset),
                        '( morris.new_alignments_tbl a join datasets_tbl d ON a.dataset_id = d.id)',
-                       'join knowngenes_tbl k on k.name=a.feature',
+                       'join knowngenes2 k on k.name=a.feature',
                        sprintf('where d.name like "%s%%"', dataset),
                        'and (a.position+(case when (a.strand = "+") then (a.length) else (-a.length) end)/2)',
                        'between k.cdsStart and k.cdsEnd',
