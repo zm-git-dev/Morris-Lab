@@ -171,19 +171,19 @@ qarp <- function(data, aVec, genelist=NULL, permutations=NULL, meancenter=TRUE) 
     data.frame(row.names=genelist, pvalues)
 }
 
-##' Create a matrix suitable 
-##' from a larger dataset.   The resulting matrix is suitable for
-##' use in other QARP functions.
+##' Create a matrix of gene specific read depths from a larger
+##' dataset.  The resulting matrix is suitable for use in other QARP
+##' functions.
 ##'
 ##' The resulting matrix will be restricted to data for a single gene.  
 ##' 
 ##' @param data a data frame containing raw read counts for multiple positions along many genes.
 ##' @param gene the common name of a gene found in the data.
 ##' @param aVec a list of factors corresponsing to datasets in the
-##' data frame.  This is used to identify wwhich columns in data
+##' data frame.  This is used to identify which columns in the matrix
 ##' correspond to treated and control datasets.  There should be only
 ##' two factor levels in the list and each entry should have a name
-##' corresponding to one of the name of one column in the data frame.
+##' corresponding to the name of one column in the data frame.
 ##' @param meancenter TRUE if the read count data for each gene should should be centered around the mean of the counts for that gene.
 ##' @return Returns a matrix suitable for use in the other QARP functions like qarp.plotProfile.
 ##' @author Chris Warth
@@ -194,13 +194,15 @@ qarp.matrix <- function(data, gene, aVec, meancenter=TRUE) {
     data.gene <- data.gene[order(data.gene$transPos),]		# order by transcript position
     rownames(data.gene) = data.gene$transPos
     isplices <- which(diff(data.gene$exonNumber) != 0)
-    splices <- data[isplices, 'transPos']
+    splices <- data.gene[isplices, 'transPos']
     data.gene = data.gene[, names(aVec)]
     mat = as.matrix(t(data.gene))
     ## center read depth about the mean by default.
-    if (meancenter)
-        mat <- mat + 1 # add a pseudo count
+    if (meancenter) {
         mat <- t(scale(t(mat), center=TRUE, scale=TRUE))
+    }
+
+    # if any of the entries end up as NA, simply set them to 0
     mat[is.na(mat)] <- 0
     
     ## attach attributes to the matrix
@@ -270,6 +272,8 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
 
     if (showsplices) {
         splices <- attr(mat, "junctions")
+        print(paste0("splices = ", paste0(splices, collapse=",")))
+
         if (!is.null(splices) && length(splices) > 0) {
             gg <- gg + geom_vline(xintercept = splices, alpha=.25,  color="red", linetype="dashed")
         }
