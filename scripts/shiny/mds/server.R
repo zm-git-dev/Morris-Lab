@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-09-30 13:57:27 chris>
+# Time-stamp: <2013-10-21 08:20:40 chris>
 
   library(shiny)
   library(ggplot2) # graphs
@@ -414,7 +414,7 @@ shinyServer(function(input, output, session) {
         treated <- grep("treated", names(datasets))
         control <- setdiff(1:length(datasets), treated)
 
-        # get the two dismension points to be drawn on the scatter plot
+        # get the two dimension points to be drawn on the scatter plot
         fit <- cmdscale(profileDistance(), eig=TRUE, k=2)
         df <- data.frame(fit$points)
 
@@ -512,12 +512,13 @@ shinyServer(function(input, output, session) {
         # This routine will plot a subsection of the data if the
         # current view has been adjusted.  In a normal case, this
         # would just be done with a call to coord_cartesian.  However
-        # our data is often so dense that it makes sense to process it
-        # to remove most of the points.  If the view has been zoomed
-        # in then these adjustment need to be made to the points that
-        # are still visible.
+        # our data is often so dense that we can get better
+        # preformance without sacrificing fidelity by not graphing
+        # most of the points.  If the view has been zoomed in then
+        # these adjustment need to be made to the points that are
+        # still visible.
         #
-        # Coord_cartiseian is still called so that othet annotations,
+        # Coord_cartesian is still called so that other annotations,
         # like the splice junctions do not force the view to expand
         # again.
         view = input$viewSlider
