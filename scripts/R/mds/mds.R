@@ -1,5 +1,7 @@
 require(vegan)
-require(xlsx)
+require(reshape)   # for melt
+require(ggplot2)
+require(grid)  # for "cm" units used when plotting
 
 
 
@@ -40,11 +42,10 @@ require(xlsx)
 ##' @return 
 ##' @author Chris Warth
 ##' @export
-qart.pvalue <- function(mat, aVec, method="euclid", permutations=10000, ...) {
+qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
     
-    distance <- dist(mat, method=method)
-    aVec <- as.factor(sapply(rownames(mat) %in% control, function(x) if (x) {"control"} else {"treated"}))
-
+    distance <- qarp.distance(mat, method=method)   
+ 
     # There are two ways to call vegan::adonis.  The first used raw data
     # and the second uses a distance matrix calculated from the raw data.
     # In the former case, you pass a matrix of raw measurments to
@@ -64,11 +65,30 @@ qart.pvalue <- function(mat, aVec, method="euclid", permutations=10000, ...) {
     # available through adonis() then you will want to precopute your own
     # distance matrix and pass it in.
 
-    df <-  adonis(distance ~ aVec, permutations=permutations, ...)
+    if (is.null(permutations))
+        df <-  adonis(distance ~ aVec)
+    else {
+        df <-  adonis(distance ~ aVec, permutations=permutations)
+    }
     pvalue <- df$aov.tab[6][1,1]
 
     return(pvalue)
 }
+##' Calculate a distance matrix for a collection of points.
+##'
+##' At present, this routine is a thin veneer on the 'dist' function.  The indirection is useful only because we may want to replace the distance function at
+##' some point so it will be conventient if all distance calculations go through one function.
+##' @param mat matrix of points, each row is a single point and each column is a single dimensional component of that point.
+##' @param method 
+##' @return 
+##' @author Chris Warth
+qarp.distance <- function(mat, method=NULL) {
+    if (is.null(method))
+        distance <- dist(mat, method="euclid")
+    else
+        distance <- dist(mat)
+}
+
 
 ##'  Read a tab-seperated-value file and cache the resulting dataset so reading it will be faster next time.
 ##'
@@ -81,7 +101,7 @@ qart.pvalue <- function(mat, aVec, method="euclid", permutations=10000, ...) {
 ##' dataframe with the data from the data file.
 ##' @author Chris Warth
 ##' @export
-qart.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
+qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
     data <- NULL
     base <- sub("^(.*)\\..*", "\\1", filename)
     rdafile = paste0(base, ".Rda")
@@ -97,7 +117,10 @@ qart.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
     }
     if (is.null(data)) {
         data <- read.csv(filename, sep=sep, stringsAsFactors=FALSE)
+        ## HACK - remove the two rows of totals from the dataset....
+        data <- data[c(-1,-2),]
         attr(data, "filename") = filename
+
         if (cache) {
             attr(data, "cachefile") = rdafile
             # if we can, save a copy in .rda format.
@@ -114,21 +137,12 @@ qart.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
     return(data)
 }
 
-##' Calculate a psuedo p-value for a single gene within a larger dataset.
+
+##' Calculate pvalues for collections of RNA/RPT profiles.
 ##'
-##' Use a pseudo f-test to estimate a p-value statistic categorized
-##' points in the distance matrix.  A null distribution is constrcted
-##' by randomly permuting the categories associated with each data
-##' point in the distance matrix.  By mixing the categories and data
-##' points many times, a null distribution of distance matricies
-##' can be estimated.
-##' 
-##' @param gene
-##' 
-##' Identifier in \code{data$symbol} for read depth data for a single
-##' gene.  Usually this is a character string, less often a factor.
-##' 
-##' @param data
+##' if genelist is not null, calculates pvalues only for the genes in
+##' the list.  Otherwise pvalues will be calculated for all genes for
+##' which there arwe entries in data.
 ##' 
 ##' The data frame containing per-gene read depth data.  Each row in
 ##' the data frame should have a \code{symbol} column and a
@@ -137,48 +151,81 @@ qart.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
 ##' unique in the data file.  Other columns give the number of reads
 ##' overlapping position \code{transPos} in the gene transcript.
 ##' Missing data rows are assumed have no reads at that position.
-##' 
-##' @return
-##' 
-##' Returns a pseudo pvalue estimating the probability of seeing a
-##' similar categorization pattern of read profiles by random chance.
-##' 
+##'
+##' @param data 
+##' @param genelist
+##' @return 
 ##' @author Chris Warth
-calcPvalue <- function(gene, data = NULL) {
-    ## Make a data matrix, where each row is an experiment, and each
-    ## column is a transcript position.  The value at each position
-    ## represents the read depth at that particular position (col) in one
-    ## experiment (row).
+qarp <- function(data, aVec, genelist=NULL, permutations=NULL, meancenter=TRUE) {
+    if (is.null(genelist)) {
+        ## extract the list of genes.
+        genelist = levels(data$symbol)
+        stopifnot(!is.null(genelist))
+    }
+    
+    pvalues = sapply(X = genelist,
+        FUN = function(gene, data, aVec, permutations) {
+            mat <- qarp.matrix(data, gene, aVec, meancenter=meancenter)
+            qarp.pvalue(mat, aVec, permutations=permutations)
+        }, data = data, aVec = aVec, permutations = permutations)
+    data.frame(row.names=genelist, pvalues)
+}
+
+##' Create a matrix suitable 
+##' from a larger dataset.   The resulting matrix is suitable for
+##' use in other QARP functions.
+##'
+##' The resulting matrix will be restricted to data for a single gene.  
+##' 
+##' @param data a data frame containing raw read counts for multiple positions along many genes.
+##' @param gene the common name of a gene found in the data.
+##' @param aVec a list of factors corresponsing to datasets in the
+##' data frame.  This is used to identify wwhich columns in data
+##' correspond to treated and control datasets.  There should be only
+##' two factor levels in the list and each entry should have a name
+##' corresponding to one of the name of one column in the data frame.
+##' @param meancenter TRUE if the read count data for each gene should should be centered around the mean of the counts for that gene.
+##' @return Returns a matrix suitable for use in the other QARP functions like qarp.plotProfile.
+##' @author Chris Warth
+qarp.matrix <- function(data, gene, aVec, meancenter=TRUE) {
+    stopifnot(all(c("symbol", "transPos", "exonNumber") %in% names(data)))
+
     data.gene <- data[data$symbol==gene,]
     data.gene <- data.gene[order(data.gene$transPos),]		# order by transcript position
     rownames(data.gene) = data.gene$transPos
-    data = subset(data.gene, select=c(-symbol, -transPos))
-    mat = as.matrix(t(data))
-
-
-    aVec <- as.factor(sapply(rownames(mat) %in% control, function(x) if (x) {"control"} else {"treated"}))
-    p <- qart.pvalue(mat, aVec)
-    return(p)
+    isplices <- which(diff(data.gene$exonNumber) != 0)
+    splices <- data[isplices, 'transPos']
+    data.gene = data.gene[, names(aVec)]
+    mat = as.matrix(t(data.gene))
+    ## center read depth about the mean by default.
+    if (meancenter)
+        mat <- mat + 1 # add a pseudo count
+        mat <- t(scale(t(mat), center=TRUE, scale=TRUE))
+    mat[is.na(mat)] <- 0
+    
+    ## attach attributes to the matrix
+    attr(mat, "gene") <- gene
+    attr(mat, "filename") <- attr(data, "filename")
+    attr(mat, "junctions") <- splices
+    
+    return(mat)
 }
 
 
 plotPvalue <- function(filename, datasets) {
     ## read the dataset from a file
     message("reading dataset...", appendLF = FALSE)
-    data <- qart.read.cachedtsv(filename)
+    data <- qarp.read.cachedtsv(filename)
     message("done.")
 
     # check that the dataset has some required columns
-    stopifnot(all(c("symbol", "transPos") %in% names(data)))
+    stopifnot(all(c("symbol", "transPos", "exonNumber") %in% names(data)))
 
-    data = data[, c("symbol", "transPos", datasets)]
-    data$symbol = as.factor(data$symbol)
+    # eliminate extra columns that we don't need.
+    data = data[, c("symbol", "transPos", "exonNumber", datasets)]
+    data$symbol <- as.factor(data$symbol)
     
-    ## extract the list of genes.
-    genes = levels(data$symbol)
-    stopifnot(!is.null(genes))
-
-    pvalues = sapply(X = genes, FUN = calcPvalue, data = data)
+    pvalues <- qarp(data, aVec)
  
     hist(pvalues, n=50, main=paste(filename))
     Sys.sleep(0.001)
@@ -187,22 +234,95 @@ plotPvalue <- function(filename, datasets) {
 }
 
 
+##' plot the read profiles across a gene.
+##'
+##' .. content for \details{} ..
+##' @param mat read depths for a single gene.
+##' @param aVec 
+##' @param xlim limitations of x-axis, if applicable.   This allows you to zoom in on particular areas of interest.
+##' @return Does not return anything of value.
+##' @author Chris Warth
+qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
+    gene <- attr(mat, "gene")
+    colorPalette <- c("red", "blue")
 
-filenames = c("PEO1-RPT-corrUp-coverage.tsv", "PEO1-RPT-corrDown-coverage.tsv", "PEO1-RPT-top200-coverage.tsv")
+    gg <- ggplot(melt(mat), aes(name="", x=X2,
+                                y=value,
+                                group=X1), environment = environment())
+    gg <- gg + theme_bw()
+    gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
+                     legend.text = element_text(size = 14, face = "bold"),
+                     legend.position="top",
+                     legend.direction="horizontal")
+    gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
+    gg <- gg + theme(panel.border = element_blank())
+    gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
 
-## specify which datasets are grouped together
-control = c("C1_RPT.norm", "C2_RPT.norm", "C3_RPT.norm", "C4_RPT.norm")
-treated = c("P1_RPT.norm", "P2_RPT.norm", "P3_RPT.norm", "P4_RPT.norm")
-datasets = c(control = control, treated = treated)
+    gg <- gg + ylab("read depth (normalized to RPM)")
+    gg <- gg + xlab("Transcript position")
+    gg <- gg + ylim(-max(mat),max(mat))
+    gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
+                                    labels=c("Control", "Treated"))
+    gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]),aes(color=colorPalette[[1]]))
+    gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
+    if (!is.null(xlim))
+        gg <- gg + coord_cartesian(xlim=xlim)
+
+    if (showsplices) {
+        splices <- attr(mat, "junctions")
+        if (!is.null(splices) && length(splices) > 0) {
+            gg <- gg + geom_vline(xintercept = splices, alpha=.25,  color="red", linetype="dashed")
+        }
+    }
+    print(gg)
 
 
+}
 
-pl <- lapply(filenames, plotPvalue, datasets)
-pvalues.best <- do.call(cbind, as.list(lapply(pl, function(df) head(df,n=10))))
-pvalues.worst <- do.call(cbind, as.list(lapply(pl, function(df) { df <- tail(df, n=10)
-                                                                  df <- df[order(df$pvalue, decreasing=TRUE),]})))
 
-write.xlsx(pvalues.best, file = "pvalues.best.xlsx", sheetName = "best", row.names = FALSE)
-write.xlsx(pvalues.worst, file = "pvalues.worst.xlsx", sheetName = "worst", row.names = FALSE)
+##' plot multi-dimensional sampling plot.
+##'
+##' .. content for \details{} ..
+##' @param mat 
+##' @param aVec 
+##' @return 
+##' @author Chris Warth
+qarp.plotMDS <- function(mat, aVec) {
+    distance <- qarp.distance(mat)
+    
+    # get the two dismension points to be drawn on the scatter plot
+    fit <- cmdscale(distance, eig=TRUE, k=2)
+    df <- data.frame(fit$points)
 
+    palette <- c("red", "blue")
+
+    # make a factor colum that indicates the condition (treated or
+    # control) of each dataset
+    cond <- aVec
+
+    # add a column indicating what color should be used for each point.
+    df <- transform(df, col=palette[cond])
+
+    par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
+
+    par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
+    par(xaxs="r", yaxs="r")  # Extend axis limits by 4% ("i" does no extension)
+
+    plot(X2 ~ X1, data=df, col=as.character(col), pch=21, bg=as.character(col),
+         xlab="", ylab="", cex=1.5, frame.plot=F, yaxt="n")
+
+    ticks = pretty(c(min(df$X2), max(df$X2)), 3)
+
+    # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
+    mgp <- par("mgp")
+    mgp[2] <- 0.5
+    par(mgp=mgp)
+
+    axis(2, at=ticks, labels=T, lwd=0, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+    grid()
+
+    # annotate the graph with the pvalue for this gene
+    pvalue <- qarp.pvalue(mat, aVec)
+    mtext(sprintf("pvalue = %0.4g", pvalue), side=1, line=1, adj=0)
+}
 
