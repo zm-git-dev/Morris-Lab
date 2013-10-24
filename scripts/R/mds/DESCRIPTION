@@ -1,0 +1,23 @@
+Package: qarp
+Version: 0.1-1
+Date: 2013-10-23
+Title: Quantiative Analysis of RNA-seq Profiles.
+Authors@R: c(person("Chris Warth", "Developer", role = c("aut", "cre"),
+    email = "cwarth@fhcrc.org"),
+    person("Tim Randolph", "Developer", role = "ctb"),
+    person("Martin McIntosh", "Developer", role = "ctb"))
+Author: Chris Warth and Tim Randolph
+Copyright: (c) 2013 Fred Hutchinson Cancer Research Center
+Maintainer: Chris Warth <warthc@fhcrc.org>
+Depends:
+    R (>= 1.8.0),
+    ggplot2,
+    reshape,
+    vegan,
+    grid
+Description: Analysis of RNA-SEQ and RIB-SEQ profiles to discover differential
+    translation.
+License: Apache License 2.0
+NeedsCompilation: no
+Collate:
+    'mds.R'

@@ -9,7 +9,7 @@ require(grid)  # for "cm" units used when plotting
 ##'
 ##' This routine calculates a single measure indicating the relative
 ##' similarity of RNA-SEQ profiles.  Profiles are categorized
-##' according to factors in \Code{aVec}.  If the profiles within each
+##' according to factors in \code{aVec}.  If the profiles within each
 ##' category are more similar to others in the same category than to
 ##' profiles in other categories, then the calculated value will be
 ##' relatively high.  If the profiles in one group are self-similar
@@ -25,21 +25,19 @@ require(grid)  # for "cm" units used when plotting
 ##' @param aVec
 ##' 
 ##' vector of factors that categorize the experiments.  The order of
-##' elements in \Code{aVec} should be the same as the order of rows in
-##' \Code{mat}.  Typically there will be two factors that divide the
-##' available experiments into two groups, e.g. \Code{"treated",
+##' elements in \code{aVec} should be the same as the order of rows in
+##' \code{mat}.  Typically there will be two factors that divide the
+##' available experiments into two groups, e.g. \code{"treated",
 ##' "control"} .  More factors can be used but nested factors are not
 ##' supported.
 ##' 
 ##' @param method
 ##'
-##' the distance measure to be used. This must be one of "euclidean",
-##' "maximum", "manhattan", "canberra", "binary" or "minkowski". Any
-##' unambiguous substring can be given.
+##' the distance measure to be used. The documentation for the \code{distance} parameter in \code{qarp.distance}
 ##' 
 ##' @param ...
 ##' remaining parameters are passed to vegan::adonis
-##' @return 
+##' @return a floating point value representing the pvalue calculated for these profiles. 
 ##' @author Chris Warth
 ##' @export
 qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
@@ -62,7 +60,7 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
     # usually going to be easier to pass raw data to adonis() and let it
     # calculate the distance matrix for you.  However, if you want to try
     # out a distance calculation that is not one of the algorithms
-    # available through adonis() then you will want to precopute your own
+    # available through adonis() then you will want to precompute your own
     # distance matrix and pass it in.
 
     if (is.null(permutations))
@@ -79,9 +77,15 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
 ##' At present, this routine is a thin veneer on the 'dist' function.  The indirection is useful only because we may want to replace the distance function at
 ##' some point so it will be conventient if all distance calculations go through one function.
 ##' @param mat matrix of points, each row is a single point and each column is a single dimensional component of that point.
-##' @param method 
-##' @return 
+##' @param method
+##'
+##' the distance measure to be used. This must be one of "euclidean",
+##' "maximum", "manhattan", "canberra", "binary" or "minkowski". Any
+##' unambiguous substring can be given.
+##' 
+##' @return a distance matrix of class 'dist' like this returned by base::dist or vegan::vegdist 
 ##' @author Chris Warth
+##' @export
 qarp.distance <- function(mat, method=NULL) {
     if (is.null(method))
         distance <- dist(mat, method="euclid")
@@ -90,15 +94,42 @@ qarp.distance <- function(mat, method=NULL) {
 }
 
 
-##'  Read a tab-seperated-value file and cache the resulting dataset so reading it will be faster next time.
+##' Read a tab-separated-value file and cache the resulting dataset so
+##' reading it will be faster next time.
 ##'
-##' .. content for \details{} ..
-##' @param the name of the file which the data are to be read from.   See \Code{help('read.csv')} for more information.
-##' @param sep the field separator character.  Default is a single tab character.  See \Code{help('read.csv')} for more information.
+##' This routine is meant to work in conjunction with the script
+##' \code{bam2depth.py} to access read-depth measurements across
+##' genes.  The input to this routine is expected to be a
+##' tab-separated text file with the following mandatory columns:
+##' 
+##' "symbol" - a text field containing the name of a gene or feature.
+##' Usually the common gene name is used, but RefSeq or uniprot names
+##' could be sued as well.  The same value should be used for any row
+##' that contains dep-depth for the same feature.
+##'
+##' "transPos" - transcript position.  A positive integer indicating
+##' position on the transcript where the read depth was measured
+##' relative to the start of the feature.  For genes, the firt
+##' postition should be 1.
+##'
+##' "exonNumber" - A positive integer indicating the current exon with
+##' the genetic feature.  This column is required but may be set to
+##' any single value if exonic information is ot available.
+##'
+##' Beyond these mandatory columns should be the actual depth data for individual experiments, e.g.
+##' symbol	transPos	exonNumber	Benign_1312_501369.depth	Benign_1675_224804.depth
+##'
+##' These are the columns that must be present (in any order) for the
+##' software to function, but it is a non-exclusive list, and other
+##' columns besides those dedicated solely to read-depth data may also
+##' be present but will be ignored.
+##' 
+##' @param the name of the file which the data are to be read from.   See \code{help('read.csv')} for more information.
+##' @param sep the field separator character.  Default is a single tab character.  See \code{help('read.csv')} for more information.
 ##' @param cache if TRUE, attempt to read and write a cached version of the file in the same
 ##' directory; otherwise no cache is used.
 ##' @return
-##' dataframe with the data from the data file.
+##' dataframe as parsed from the text file.
 ##' @author Chris Warth
 ##' @export
 qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
@@ -117,7 +148,11 @@ qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
     }
     if (is.null(data)) {
         data <- read.csv(filename, sep=sep, stringsAsFactors=FALSE)
-        ## HACK - remove the two rows of totals from the dataset....
+        ## HACK - remove the first two rows of totals from the
+        ## dataset....  in some datasets these are total number of
+        ## reads or total number of alignments.  need to make this mor
+        ## ediscriminatin and only remove these rows if they in fact
+        ## looks like the totals described.
         data <- data[c(-1,-2),]
         attr(data, "filename") = filename
 
@@ -154,9 +189,10 @@ qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
 ##'
 ##' @param data 
 ##' @param genelist
-##' @return 
+##' @return a data frame containing pvalues indexed by gene names
 ##' @author Chris Warth
-qarp <- function(data, aVec, genelist=NULL, permutations=NULL, meancenter=TRUE) {
+##' @export
+qarp <- function(data, aVec, genelist=NULL, permutations=NULL) {
     if (is.null(genelist)) {
         ## extract the list of genes.
         genelist = levels(data$symbol)
@@ -165,7 +201,7 @@ qarp <- function(data, aVec, genelist=NULL, permutations=NULL, meancenter=TRUE) 
     
     pvalues = sapply(X = genelist,
         FUN = function(gene, data, aVec, permutations) {
-            mat <- qarp.matrix(data, gene, aVec, meancenter=meancenter)
+            mat <- qarp.matrix(data, gene, aVec)
             qarp.pvalue(mat, aVec, permutations=permutations)
         }, data = data, aVec = aVec, permutations = permutations)
     data.frame(row.names=genelist, pvalues)
@@ -184,23 +220,23 @@ qarp <- function(data, aVec, genelist=NULL, permutations=NULL, meancenter=TRUE) 
 ##' correspond to treated and control datasets.  There should be only
 ##' two factor levels in the list and each entry should have a name
 ##' corresponding to the name of one column in the data frame.
-##' @param meancenter TRUE if the read count data for each gene should should be centered around the mean of the counts for that gene.
 ##' @return Returns a matrix suitable for use in the other QARP functions like qarp.plotProfile.
 ##' @author Chris Warth
-qarp.matrix <- function(data, gene, aVec, meancenter=TRUE) {
+##' @export
+qarp.matrix <- function(data, gene, aVec) {
     stopifnot(all(c("symbol", "transPos", "exonNumber") %in% names(data)))
 
+    if (!gene %in% data$symbol) {
+        warning(paste0("feature ", gene," does not exist in symbol column of data frame."))
+        return()
+    }
     data.gene <- data[data$symbol==gene,]
     data.gene <- data.gene[order(data.gene$transPos),]		# order by transcript position
     rownames(data.gene) = data.gene$transPos
     isplices <- which(diff(data.gene$exonNumber) != 0)
     splices <- data.gene[isplices, 'transPos']
-    data.gene = data.gene[, names(aVec)]
+    data.gene = data.gene[, names(aVec), drop=FALSE]
     mat = as.matrix(t(data.gene))
-    ## center read depth about the mean by default.
-    if (meancenter) {
-        mat <- t(scale(t(mat), center=TRUE, scale=TRUE))
-    }
 
     # if any of the entries end up as NA, simply set them to 0
     mat[is.na(mat)] <- 0
@@ -238,12 +274,15 @@ plotPvalue <- function(filename, datasets) {
 
 ##' plot the read profiles across a gene.
 ##'
-##' .. content for \details{} ..
+##' This routine creates a plot on the current grphics device that
+##' depicts a collection of RNA-SEQ profiles drawn over a gene
+##' transcript.  The optional xlim allows you to specify the limits of
+##' the x-axis.
 ##' @param mat read depths for a single gene.
 ##' @param aVec 
 ##' @param xlim limitations of x-axis, if applicable.   This allows you to zoom in on particular areas of interest.
-##' @return Does not return anything of value.
 ##' @author Chris Warth
+##' @export
 qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
     gene <- attr(mat, "gene")
     colorPalette <- c("red", "blue")
@@ -272,25 +311,31 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
 
     if (showsplices) {
         splices <- attr(mat, "junctions")
-        print(paste0("splices = ", paste0(splices, collapse=",")))
-
         if (!is.null(splices) && length(splices) > 0) {
             gg <- gg + geom_vline(xintercept = splices, alpha=.25,  color="red", linetype="dashed")
         }
     }
     print(gg)
-
-
+    return()
 }
 
 
-##' plot multi-dimensional sampling plot.
+##' plot multi-dimensional sampling points.
 ##'
-##' .. content for \details{} ..
+##' This routine creates a plot on the current graphics device that
+##' depicts the distribution of points after multi-dimentional
+##' sampling has reduced the dimensionality of the points.  The input
+##' matrix contains multiple points, one per row, in a high
+##' dimensional space.  e.g. a single RNA-SEQ profile across a
+##' 1000-base gene would be one point in a 1000-dimensional space.
+##' Multidimensional scaling reduces these points to two dimensions,
+##' while maintaining their relative distance from one another.
+##' Points close togther in 1000-dimensional space will be close
+##' together in 2-dimensional space, and vice versa.
 ##' @param mat 
 ##' @param aVec 
-##' @return 
 ##' @author Chris Warth
+##' @export
 qarp.plotMDS <- function(mat, aVec) {
     distance <- qarp.distance(mat)
     
@@ -328,5 +373,6 @@ qarp.plotMDS <- function(mat, aVec) {
     # annotate the graph with the pvalue for this gene
     pvalue <- qarp.pvalue(mat, aVec)
     mtext(sprintf("pvalue = %0.4g", pvalue), side=1, line=1, adj=0)
+    return()
 }
 
