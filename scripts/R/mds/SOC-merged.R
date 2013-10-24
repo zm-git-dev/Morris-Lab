@@ -1,6 +1,6 @@
-source("mds.R")
+library(qarp)
 
-data <- qarp.read.cachedtsv("~/data/SOC-merged.tsv")
+data <- qarp.read.cachedtsv("/Volumes/homes/data/SOC-merged.tsv")
 control <- c(
     "Benign_1312_501369.depth", "Benign_1675_224804.depth", "Benign_441_206864.depth",
     "Benign_2638_223151.depth", "Benign_7012_315111.depth", "Benign_7609_361548.depth",
