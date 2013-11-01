@@ -63,10 +63,11 @@ cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
 reads_trimmed.fq tooshort.fq  : ${rawreads}
+	${cmd} $^ | fastq_quality_trimmer -Q 33 -t 25 -l ${LENGTH} -i /dev/stdin -o $(basename $^)_trim.fq
 ifeq ($(REVERSECOMPLEMENT),1)
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
+	cat $(basename $^)_trim.fq | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
 else
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2>&1 >$@ | tee cutadapt.stats
+	cat $(basename $^)_trim.fq | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2>&1 >$@ | tee cutadapt.stats
 endif
 
 $(BT)/bowtie_viral_hits.sam : $(BT)/bowtie_nomatch.fastq
@@ -81,21 +82,9 @@ $(BT)/bowtie_nomatch.fastq : $(BT)/bowtie_hits.sam
 # The RPT reads are aligned against a reference genome.
 # Those read that don't align the first time are trimmed and given a second chance at alignment.
 #
-$(BT)/bowtie_hits.sam : $(BT)/primary.sam $(BT)/secondary.sam
-	# merge the two SAM files; only use the header from the first sam file.
-	cat $(BT)/primary.sam <(grep -v '^@' $(BT)/secondary.sam) > $@
-
-
-$(BT)/primary.sam: reads_nonrrna.fq
+$(BT)/bowtie_hits.sam : reads_nonrrna.fq
 	@-mkdir -p $(dir $@)
 	bowtie -p 4 --un $(BT)/bowtie_nomatch.fastq --al $(BT)/bowtie_aligned.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
-
-$(BT)/secondary.sam: $(BT)/primary.sam
-	# try to recover some of the unaligned reads.
-	# we trim the 3' end of the reads to 24nt and realign.
-	# any that align are appended to the "normal" alignments.
-	fastx_clipper -Q 33 -l 25 <$(BT)/bowtie_nomatch.fastq | fastx_trimmer -Q 33 -l 24  >secondary.fq
-	bowtie -p 4 --un $(BT)/bowtie_norecover.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}" secondary.fq 2>&1 >$@ | tee -a $(BT)/bowtie_hits.stats
 
 
 $(BT)/accepted_hits.bam: $(BT)/bowtie_hits.sam
