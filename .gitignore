@@ -32,3 +32,4 @@ scripts/shiny/mds/PEO1-RPT-corrUp-coverage.tsv
 scripts/shiny/mds/PEO1-RPT-top200-coverage.tsv
 scripts/shiny/mds/PEO1-RPT-corrDown-coverage.tsv
 SessionDesktop.el
+*.tar

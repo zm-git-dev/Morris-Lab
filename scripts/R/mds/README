@@ -1,0 +1,17 @@
+
+
+There are three main threads of development in this source tree.
+
+1. The R programs at the top level and in the R/ subdirectory comprise
+a set of functions and example usage for the qualitative assessment of
+RNA-SEQ profiles.
+
+2. The files under inst/shiny are an attempt to make the analysis more
+accessible by embedding it in a Shiny app.  Shiny is an R package that
+makes interactive applications available in web browsers.
+
+3. The Python script under inst/python is a script that will read a
+series of BAM file and a feature annotation file (in GTF format) and
+will produce a text file containing read depths across the selected
+features.  The output of this script can be read into the supplied R
+functions for analysis.
