@@ -68,12 +68,10 @@ if [ -z "$dataset" ]; then
     dataset=${expr}_MM${mismatch}
 fi
 
-read raw
-read trimmed
-read nonrrna
-read aligned
-read in_exons
-read in_uniq_exons
+while read line 
+do
+    eval $line
+done
 
 
 # This SQL represents a real hack.  I wanted to create a dataset entry
