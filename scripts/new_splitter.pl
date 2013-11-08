@@ -14,6 +14,8 @@ my $barcodes_length;
 my @barcodes;
 my $mismatches = 0;
 my $debug = 0;
+my $compress = 0;
+my $restrict = 0;
 my $help;
 
 my %counts;
@@ -24,7 +26,7 @@ my %files;		# output file handles
 
 sub usage {
   print STDERR "Unknown option: @_\n" if ( @_ );
-  print STDERR "usage: program [--barcodes|-b FILENAME] [--mismatches|-m NUMBER] [--help|-?] [--debug|-d] <sequence_fastq> <index_fastq>\n";
+  print STDERR "usage: program  [--help|-?] [--compress|-z] [--restrict|-r NUMBER] [--barcodes|-b FILENAME] [--mismatches|-m NUMBER] [--debug|-d] <sequence_fastq> <index_fastq>\n";
   print STDERR "sequence and index files may be compressed with gzip";
   exit;
 }
@@ -52,6 +54,10 @@ sub load_barcode_file ($) {
 	die "Error: bad identifier value ($ident) at barcode file ($filename) line $. (must be alphanumeric)\n" 
 	    unless $ident =~ m/^\w+$/;
 
+	if ($restrict) {
+	    $barcode = substr $barcode, 0, $restrict;
+	}
+
 	die "Error: badcode($ident, $barcode) is shorter or equal to maximum number of " .
 	    "mismatches ($mismatches). This makes no sense. Specify fewer  mismatches.\n" 
 	    if length($barcode)<=$mismatches;
@@ -71,6 +77,8 @@ sub load_barcode_file ($) {
 	    print STDERR $ident,"\t", $seq ,"\n";
 	}
     }
+
+
 }		       
 
 #Quickly calculate hamming distance between two strings
@@ -90,6 +98,8 @@ usage() if ( @ARGV < 1 or
           ! GetOptions('help|?' => \$help, 
 		       'barcodes|b=s' => \$barcodes, 
 		       'mismatches|m=i' => \$mismatches, 
+		       'compress|z' => \$compress, 
+		       'restrict|r=i' => \$restrict, 
 		       'debug|d' => \$debug)
           or defined $help );
 
@@ -124,6 +134,7 @@ if ($barfile =~ /.*\.gz/) {
 }
 
 print $mismatches," allowed mismatches\n" if $debug;
+print "match restricted to first ",$restrict," bases\n" if ($restrict && $debug);
 
 load_barcode_file ($barcodes);
 
@@ -138,18 +149,17 @@ while (my $bar = <$bario>) {
     $bar[2] = <$bario>;
     $bar[3] = <$bario>;
 
+    # Get DNA fragment (in the length of the barcodes)
+    # The barcode will be tested only against this fragment
+    # (no point in testing the barcode against the whole sequence)
+    my $sequence_fragment = substr $bar[1], 0,  $barcodes_length;
+
     my $best_barcode_mismatches_count = $barcodes_length;
     my $best_barcode_ident = undef;
 
     #Try all barcodes, find the one with the lowest mismatch count
     foreach my $barcoderef (@barcodes) {
 	my ($ident, $barcode) = @{$barcoderef};
-
-	# Get DNA fragment (in the length of the barcodes)
-	# The barcode will be tested only against this fragment
-	# (no point in testing the barcode against the whole sequence)
-	my $sequence_fragment;
-	$sequence_fragment = substr $bar[1], 0, $barcodes_length;
 
 	my $mm = mismatch_count($sequence_fragment, $barcode) ; 
 
@@ -212,7 +222,7 @@ close_output_files();
 # (Also create a file for the dummy 'unmatched' barcode)
 sub create_output_files {
     my $newfile_prefix = "";
-    my $newfile_suffix = ".gz"; 
+    my $newfile_suffix = ($compress ? ".fq.gz" : ".fq"); 
 
     #generate a uniq list of barcode identifiers;
     my %barcodes = map { $_->[0] => 1 } @barcodes; 
@@ -222,10 +232,14 @@ sub create_output_files {
 	my $new_filename = $newfile_prefix . $ident . $newfile_suffix; 
 	$filenames{$ident} = $new_filename;
 	print "creating output file for $filenames{$ident}\n" if $debug;
-	my $file = new IO::Compress::Gzip $filenames{$ident}
-	    or die "gzip failed to compress $filenames{$ident}: $GzipError\n";
-	# open my $file, ">$filenames{$ident}" 
-	#     or die "could not open $outfile: $!\n";
+	my $file;
+	if ($compress) {
+	    $file = new IO::Compress::Gzip $filenames{$ident}
+		or die "gzip failed to compress $filenames{$ident}: $GzipError\n";
+	} else {
+	    open $file, ">$filenames{$ident}" 
+	         or die "could not open $filenames{$ident}: $!\n";
+	}
 	$files{$ident} = $file ;
     }
 }
