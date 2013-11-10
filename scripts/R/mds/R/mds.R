@@ -3,7 +3,28 @@ require(reshape)   # for melt
 require(ggplot2)
 require(grid)  # for "cm" units used when plotting
 
+## http://stackoverflow.com/a/12996160/1135316
+addTrans <- function(color,trans)
+  {
+      # This function adds transparancy to a color.
+      # Define transparancy with an integer between 0 and 255
+      # 0 being fully transparant and 255 being fully visable
+      # Works with either color and trans a vector of equal length,
+      # or one of the two of length 1.
 
+      if (length(color)!=length(trans)&!any(c(length(color),length(trans))==1)) stop("Vector lengths not correct")
+      if (length(color)==1 & length(trans)>1) color <- rep(color,length(trans))
+      if (length(trans)==1 & length(color)>1) trans <- rep(trans,length(color))
+
+      num2hex <- function(x)
+        {
+            hex <- unlist(strsplit("0123456789ABCDEF",split=""))
+            return(paste(hex[(x-x%%16)/16+1],hex[x%%16+1],sep=""))
+        }
+      rgb <- rbind(col2rgb(color),trans)
+      res <- paste("#",apply(apply(rgb,2,num2hex),2,paste,collapse=""),sep="")
+      return(res)
+  }
 
 ##' Calculate a psuedo p-value for a set of categorized RNA-SEQ profiles.
 ##'
@@ -40,9 +61,17 @@ require(grid)  # for "cm" units used when plotting
 ##' @return a floating point value representing the pvalue calculated for these profiles. 
 ##' @author Chris Warth
 ##' @export
-qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
+qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL, seed=123) {
+    # do some sanity testing of the arguments.
+    if (!is(mat, "matrix")) stop("Must pass a matrix containinf=g read depths across a gene, with transcript position down the rows and each experiments across columns")
+    if (!is.factor(aVec)) stop("aVec parameter must be a vector of factors.  It is used to separate the columns of 'mat' into groups.")
+    if (length(levels(aVec)) < 2) stop("aVec parameter must have at least two factor levels.")
+    if (length(aVec) != ncol(mat))
+      warning(sprintf(paste0("Length of aVec (%d) does not match #rows of mat (%d).\n",
+                             "Make sure 'mat' has transcript positions in rows and experiments in columns."),
+                      length(aVec), nrow(mat)))
     
-    distance <- qarp.distance(mat, method=method)   
+    distance <- qarp.distance(t(mat), method=method)   
  
     # There are two ways to call vegan::adonis.  The first used raw data
     # and the second uses a distance matrix calculated from the raw data.
@@ -63,6 +92,7 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL) {
     # available through adonis() then you will want to precompute your own
     # distance matrix and pass it in.
 
+    set.seed(seed)   # make the experiments repeatable, as long as permutations are the same.
     if (is.null(permutations))
         df <-  adonis(distance ~ aVec)
     else {
@@ -136,10 +166,12 @@ qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
     data <- NULL
     base <- sub("^(.*)\\..*", "\\1", filename)
     rdafile = paste0(base, ".Rda")
-    
+    options(warn=-1)
     # try to read the ached version
     if (cache) {
-        e <- try({load(paste0(base, ".Rda"))}, silent=TRUE)
+        e <- try({
+                  supressWarnings(load(paste0(base, ".Rda")))
+              }, silent=TRUE)
         if (class(e) != "try-error") {
             attr(data, "filename") = filename
             attr(data, "cachefile") = rdafile
@@ -150,8 +182,8 @@ qarp.read.cachedtsv <- function(filename, sep='\t', cache=TRUE) {
         data <- read.csv(filename, sep=sep, stringsAsFactors=FALSE)
         ## HACK - remove the first two rows of totals from the
         ## dataset....  in some datasets these are total number of
-        ## reads or total number of alignments.  need to make this mor
-        ## ediscriminatin and only remove these rows if they in fact
+        ## reads or total number of alignments.  need to make this more
+        ## discriminating and only remove these rows if they in fact
         ## looks like the totals described.
         data <- data[c(-1,-2),]
         attr(data, "filename") = filename
@@ -272,50 +304,61 @@ plotPvalue <- function(filename, datasets) {
 }
 
 
-##' plot the read profiles across a gene.
+##' plot read profiles across a gene.
 ##'
-##' This routine creates a plot on the current grphics device that
+##' This routine creates a plot on the current graphics device that
 ##' depicts a collection of RNA-SEQ profiles drawn over a gene
-##' transcript.  The optional xlim allows you to specify the limits of
+##' transcript.
+##'
+##' The profiles will be grouped according to the factors in aVec.
+##'
+##' If \code{showplices} is true, the spice junctions will be indicated on the plot.
+##' These are derived from the read-depth data and may not be accurate for sparsly populated genes.
+##' 
+##' If \code{invert} is true, one of the groups of profiles will be inverted
+##' so it plots below the horizontal axis.   Someone find this a more appealing presentation.
+##' 
+##' \code{xlim} allows you to specify the limits of
 ##' the x-axis.
-##' @param mat read depths for a single gene.
-##' @param aVec 
-##' @param xlim limitations of x-axis, if applicable.   This allows you to zoom in on particular areas of interest.
+##' @param mat a matrix of read depths for a single gene. Each row is a single nucleotide position on the gene, and each column is seperate experiment.
+##' The order of columns should correspond to the order of factors in \code{aVec}.
+##' @param aVec list of factors used to group the profiles. 
+##' @param showsplices Show splice junctions.
+##' @param invert Draw one of the groups of profiles below the horizontal axis.
+##' @param xlim optional 2-element vector giving limitations of x-axis.   Using this paramter you can zoom in on particular region of interest.
+##' @param ... optional additional parameters to pass to plotting routines (see \code{\link{par}})
 ##' @author Chris Warth
 ##' @export
-qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
+qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, invert=FALSE, ...) {
+    # do some sanity testing of the arguments.
+    if (!is.factor(aVec)) stop("aVec parameter must be a vector of factors.  It is used to separate the columns of 'mat' into groups.")
+    if (length(levels(aVec)) < 2) stop("aVec parameter must have at least two factor levels.")
+    if (length(aVec) != ncol(mat))
+      warning(sprintf(paste0("Length of aVec (%d) does not match #rows of mat (%d).\n",
+                             "Make sure 'mat' has transcript positions in rows and experiments in columns."),
+                      length(aVec), nrow(mat)))
+
     gene <- attr(mat, "gene")
-    colorPalette <- c("red", "blue")
-
-    gg <- ggplot(melt(mat), aes(name="", x=X2,
-                                y=value,
-                                group=X1), environment = environment())
-    gg <- gg + theme_bw()
-    gg <- gg + theme(legend.title = element_text(size = 16, face = "bold"),
-                     legend.text = element_text(size = 14, face = "bold"),
-                     legend.position="top",
-                     legend.direction="horizontal")
-    gg <- gg + theme(legend.key = element_rect(size = 0.5, linetype="blank"))
-    gg <- gg + theme(panel.border = element_blank())
-    gg <- gg + theme(plot.margin = unit(c(0,0,0,0), "cm"))
-
-    gg <- gg + ylab("read depth (normalized to RPM)")
-    gg <- gg + xlab("Transcript position")
-    gg <- gg + ylim(-max(mat),max(mat))
-    gg <- gg + scale_colour_manual(name=gene, values=colorPalette,
-                                    labels=c("Control", "Treated"))
-    gg <- gg + geom_line(data=melt(mat[treated,,drop=FALSE]),aes(color=colorPalette[[1]]))
-    gg <- gg + geom_line(data=melt(-mat[control,,drop=FALSE]), aes(color=colorPalette[[2]]))
-    if (!is.null(xlim))
-        gg <- gg + coord_cartesian(xlim=xlim)
-
-    if (showsplices) {
-        splices <- attr(mat, "junctions")
-        if (!is.null(splices) && length(splices) > 0) {
-            gg <- gg + geom_vline(xintercept = splices, alpha=.25,  color="red", linetype="dashed")
-        }
+    mypalette <- c("red", "blue")
+    m = max(mat)
+    if (invert) {
+        ylim=c(-m,m)
+    } else {
+        ylim=c(0,m)
     }
-    print(gg)
+
+    matplot(mat[,aVec==(levels(aVec)[1])], col=mypalette[1], lty=1, type="l", ylim=ylim, ...)
+    if (any(aVec==(levels(aVec)[2])))
+      matlines((if (invert) -1 else 1)*mat[,aVec==(levels(aVec)[2])], col=mypalette[2], lty=1, ylim=ylim, ...)
+    if (showsplices & !is.null(attr(mat,"junctions"))) {
+        j <- attr(mat, "junctions")
+        abline(v=j, col=addTrans("red",100), lty=2)
+    }
+    # setup for no margins on the legend
+    par(xpd=TRUE)
+    p <- locator(1)
+    print(p)
+    legend(p, levels(aVec)[1:2], horiz=T, bty="n",lty=1, pch=NA, col=mypalette)
     return()
 }
 
@@ -337,7 +380,7 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, xlim=NULL) {
 ##' @author Chris Warth
 ##' @export
 qarp.plotMDS <- function(mat, aVec) {
-    distance <- qarp.distance(mat)
+    distance <- qarp.distance(t(mat))
     
     # get the two dismension points to be drawn on the scatter plot
     fit <- cmdscale(distance, eig=TRUE, k=2)
