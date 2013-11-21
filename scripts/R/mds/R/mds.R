@@ -1,7 +1,7 @@
 require(vegan)
 require(reshape)   # for melt
-require(ggplot2)
 require(grid)  # for "cm" units used when plotting
+require(gplots)
 
 ## http://stackoverflow.com/a/12996160/1135316
 addTrans <- function(color,trans)
@@ -61,7 +61,7 @@ addTrans <- function(color,trans)
 ##' @return a floating point value representing the pvalue calculated for these profiles. 
 ##' @author Chris Warth
 ##' @export
-qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL, seed=123) {
+qarp.pvalue <- function(mat, aVec, permutations=NULL) {
     # do some sanity testing of the arguments.
     if (!is(mat, "matrix")) stop("Must pass a matrix containinf=g read depths across a gene, with transcript position down the rows and each experiments across columns")
     if (!is.factor(aVec)) stop("aVec parameter must be a vector of factors.  It is used to separate the columns of 'mat' into groups.")
@@ -71,7 +71,7 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL, seed=123) {
                              "Make sure 'mat' has transcript positions in rows and experiments in columns."),
                       length(aVec), nrow(mat)))
     
-    distance <- qarp.distance(t(mat), method=method)   
+    distance <- qarp.distance(t(mat))   
  
     # There are two ways to call vegan::adonis.  The first used raw data
     # and the second uses a distance matrix calculated from the raw data.
@@ -92,7 +92,6 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL, seed=123) {
     # available through adonis() then you will want to precompute your own
     # distance matrix and pass it in.
 
-    set.seed(seed)   # make the experiments repeatable, as long as permutations are the same.
     if (is.null(permutations))
         df <-  adonis(distance ~ aVec)
     else {
@@ -104,23 +103,21 @@ qarp.pvalue <- function(mat, aVec, method=NULL, permutations=NULL, seed=123) {
 }
 ##' Calculate a distance matrix for a collection of points.
 ##'
-##' At present, this routine is a thin veneer on the 'dist' function.  The indirection is useful only because we may want to replace the distance function at
-##' some point so it will be conventient if all distance calculations go through one function.
-##' @param mat matrix of points, each row is a single point and each column is a single dimensional component of that point.
-##' @param method
-##'
-##' the distance measure to be used. This must be one of "euclidean",
-##' "maximum", "manhattan", "canberra", "binary" or "minkowski". Any
-##' unambiguous substring can be given.
+##' At present, this routine is a thin veneer on the 'dist' function.
+##' The indirection is useful only because we may want to replace the
+##' distance function at some point so it will be conventient if all
+##' distance calculations go through one function.
+##' @param mat matrix of points, each row is a single point and each
+##' column is a single dimensional component of that point.
+##' @param method the distance measure to be used. This must be one of
+##' "euclidean", "maximum", "manhattan", "canberra", "binary" or
+##' "minkowski". Any unambiguous substring can be given.
 ##' 
 ##' @return a distance matrix of class 'dist' like this returned by base::dist or vegan::vegdist 
 ##' @author Chris Warth
 ##' @export
-qarp.distance <- function(mat, method=NULL) {
-    if (is.null(method))
-        distance <- dist(mat, method="euclid")
-    else
-        distance <- dist(mat)
+qarp.distance <- function(mat, ...) {
+    distance <- dist(mat, ...)
 }
 
 
@@ -344,7 +341,7 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, invert=FALSE, ...) {
     if (invert) {
         ylim=c(-m,m)
     } else {
-        ylim=c(0,m)
+        ylim=c(min(mat),m)
     }
 
     matplot(mat[,aVec==(levels(aVec)[1])], col=mypalette[1], lty=1, type="l", ylim=ylim, ...)
@@ -354,11 +351,12 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, invert=FALSE, ...) {
         j <- attr(mat, "junctions")
         abline(v=j, col=addTrans("red",100), lty=2)
     }
-    # setup for no margins on the legend
-    par(xpd=TRUE)
-    p <- locator(1)
-    print(p)
-    legend(p, levels(aVec)[1:2], horiz=T, bty="n",lty=1, pch=NA, col=mypalette)
+
+    xpd <- par("xpd")
+    par(xpd=TRUE)  # don't clip to the plot area
+    smartlegend(x="center", y="top",
+            levels(aVec)[1:2], pch=NA, col=mypalette, lty=1, horiz=T, bty="n", inset=1.05)
+    par(xpd=xpd)  # reset clipping
     return()
 }
 
@@ -379,10 +377,11 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, invert=FALSE, ...) {
 ##' @param aVec 
 ##' @author Chris Warth
 ##' @export
-qarp.plotMDS <- function(mat, aVec) {
+qarp.plotMDS <- function(mat, aVec, ...) {
+
     distance <- qarp.distance(t(mat))
-    
-    # get the two dismension points to be drawn on the scatter plot
+
+    # get the two dimension points to be drawn on the scatter plot
     fit <- cmdscale(distance, eig=TRUE, k=2)
     df <- data.frame(fit$points)
 
@@ -395,27 +394,32 @@ qarp.plotMDS <- function(mat, aVec) {
     # add a column indicating what color should be used for each point.
     df <- transform(df, col=palette[cond])
 
-    par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
+    #par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
 
-    par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
-    par(xaxs="r", yaxs="r")  # Extend axis limits by 4% ("i" does no extension)
+    #par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
+    #par(xaxs="r", yaxs="r")  # Extend axis limits by 4% ("i" does no extension)
 
-    plot(X2 ~ X1, data=df, col=as.character(col), pch=21, bg=as.character(col),
-         xlab="", ylab="", cex=1.5, frame.plot=F, yaxt="n")
+    defaults <- list(xaxs = 'r', yaxs = 'r', mgp = c(1.5, 0.2, 0), pch = 21, cex=1.5, yaxt="n")
+    args <- modifyList(defaults, list(x =df$X1, y=df$X2, col=as.character(df$col), bg=as.character(df$col), ...))
 
-    ticks = pretty(c(min(df$X2), max(df$X2)), 3)
+    do.call("plot", args)
 
-    # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
-    mgp <- par("mgp")
-    mgp[2] <- 0.5
-    par(mgp=mgp)
+    ## plot(X2 ~ X1, data=df, col=as.character(col), pch=21, bg=as.character(col),
+    ##         cex=1.5, frame.plot=F, yaxt="n", ...)
 
-    axis(2, at=ticks, labels=T, lwd=0, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
-    grid()
+    ## smartlegend(x="center", y="top",
+    ##         levels(aVec)[1:2], pch=21, col=mypalette, horiz=T, bty="n", xpd=TRUE, inset=-.1)
 
-    # annotate the graph with the pvalue for this gene
-    pvalue <- qarp.pvalue(mat, aVec)
-    mtext(sprintf("pvalue = %0.4g", pvalue), side=1, line=1, adj=0)
-    return()
+    ## ticks = pretty(c(min(df$X2), max(df$X2)), 3)
+
+    ## # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
+    ## mgp <- par("mgp")
+    ## mgp[2] <- 0.5
+    ## par(mgp=mgp)
+
+    ## axis(2, at=ticks, labels=T, lwd=0, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+    ## grid()
+
+    invisible()
 }
 

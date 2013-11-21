@@ -1,7 +1,17 @@
+
+## The qarp package can be loaded with,
+##
+##    R CMD INSTALL --build qarp_0.1-1.tar.gz
+##
+
+
 library(qarp)
 
+peofile <- system.file("extdata", "PEO", "PEO1-RPT-top200-coverage.tsv.gz",
+                       package = "qarp")
+
 ## open a datafile containing read depth data
-data <- qarp.read.cachedtsv("inst/extdata/PEO/PEO1-RPT-top200-coverage.tsv.gz")
+data <- qarp.read.cachedtsv(peofile)
 
 ## Establish which columns in the data frame contain read norm data
 ## We use columns of data in which each read depth has been normalized to the
@@ -14,24 +24,26 @@ datasets = c(control = control, treated = treated)
 data = data[, c("symbol", "transPos", "exonNumber", datasets)]
 data$symbol <- as.factor(data$symbol)
 
+
 ## create a list of factors that will be used to divide the datasets into
 ## control and treated groups.
 aVec <- as.factor(sapply(datasets %in% control, function(x) if (x) {"control"} else {"treated"}))
 names(aVec) <- datasets
 
-## Draw the profiles of the LCN2 gene without normalizing the reads in any way
-## This gives a good representation of raw read depth across the gene.
+
+## Draw the profiles of the LCN2 gene
+## This gives a representation of raw read depth across the gene.
 mat <- qarp.matrix(data, "LCN2", aVec)
 qarp.plotProfile(mat, aVec)
 
 ## Draw a multidimensional sampling scatter plot derived from the
 ## read depth data.
-mat <- qarp.matrix(data, "LGALS3BP", aVec)
 qarp.plotMDS(mat, aVec)
 
 ## calculate and print a pvalue for just the ACTB gene
-df <- qarp(data, aVec, genelist=c("ACTB"))
-print(df)
+## increase the permutations to get a more reproducible result.
+pvalue <- qarp.pvalue(mat, aVec, permutations=10000)
+print(sprintf("Calculated pvalue for LCN2 = %d", pvalue))
 
 ## calculate pvalue for all genes in the dataset (genomewide)
 ## Order the list according to pvalue, draw  histogram of the
