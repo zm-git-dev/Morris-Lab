@@ -62,11 +62,12 @@ plot: ${aligner}_out/aligned_position_stats.txt
 cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
-reads_trimmed.fq tooshort.fq  : ${rawreads}
+reads_trimmed.fq tooshort.fq  cutadapt.stats : ${rawreads}
+	${cmd} $^ | fastq_quality_trimmer -Q 33 -t 25 -l ${LENGTH} -i /dev/stdin -o $(basename $^)_trim.fq
 ifeq ($(REVERSECOMPLEMENT),1)
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
+	cat $(basename $^)_trim.fq | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
 else
-	${cmd} $^ | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2>&1 >$@ | tee cutadapt.stats
+	cat $(basename $^)_trim.fq | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2>&1 >$@ | tee cutadapt.stats
 endif
 
 $(BT)/bowtie_viral_hits.sam : $(BT)/bowtie_nomatch.fastq
@@ -81,60 +82,41 @@ $(BT)/bowtie_nomatch.fastq : $(BT)/bowtie_hits.sam
 # The RPT reads are aligned against a reference genome.
 # Those read that don't align the first time are trimmed and given a second chance at alignment.
 #
-$(BT)/bowtie_hits.sam : $(BT)/primary.sam $(BT)/secondary.sam
-	# merge the two SAM files; only use the header from the first sam file.
-	cat $(BT)/primary.sam <(grep -v '^@' $(BT)/secondary.sam) > $@
-
-
-$(BT)/primary.sam: reads_nonrrna.fq
+$(BT)/bowtie_hits.sam : reads_nonrrna.fq
 	@-mkdir -p $(dir $@)
-	bowtie -p 4 --un $(BT)/bowtie_nomatch.fastq --al $(BT)/bowtie_aligned.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
+	# bowtie -p 4 --un $(BT)/bowtie_nomatch.fastq --al $(BT)/bowtie_aligned.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
+	# used to filter the alignments for mismatches and multiple loci.
+	# now we use bowtie options to produce the right output in the first place.
+	bowtie -p 4 -n 1 --best --strata  -m ${MISMATCHES} -l 36 --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
 
-$(BT)/secondary.sam: $(BT)/primary.sam
-	# try to recover some of the unaligned reads.
-	# we trim the 3' end of the reads to 24nt and realign.
-	# any that align are appended to the "normal" alignments.
-	fastx_clipper -Q 33 -l 25 <$(BT)/bowtie_nomatch.fastq | fastx_trimmer -Q 33 -l 24  >secondary.fq
-	bowtie -p 4 --un $(BT)/bowtie_norecover.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}" secondary.fq 2>&1 >$@ | tee -a $(BT)/bowtie_hits.stats
-
-
-$(BT)/accepted_hits.bam: $(BT)/bowtie_hits.sam
-	# ${SCRIPTS}/sam_renamer <$^ | samtools view -Sbh /dev/stdin >$@
-#	awk '/^@/ { print; } !/^@/ && $$3!="*" { print | " sort -k 1 " }' $^ |samtools view -Sbh $^ >$@
-	awk '/^@/ { print; } !/^@/ && $$3!="*" { print  }' $^ | samtools view -Sbh /dev/stdin >$@
 
 $(TH)/accepted_hits.bam: reads_nonrrna.fq 
 	@-mkdir -p $(dir $@)
 	BOWTIE_INDEXES="${BOWTIE_INDEXES}" tophat --segment-length 10 --segment-mismatches ${MISMATCHES} -G  ${knowngenes}.gtf  "/${INDEX_BASE}" $^
-
-
 
 # exclude alignments that are aligned to more than one gene, or to no gene at all.
 # filter out alignments with more than ${MISMATCHES} mismatched bases.
 # filter out alignments that are aligned to more than one locus on the genome.
 # exclude alignments that are aligned to more than one gene, or to no gene at all.
 
-${aligner}_out/accepted_final.sam : ${aligner}_out/accepted_hits.bam
-	# filter out alignments with more than ${MISMATCHES} mismatched bases.
-	# filter out alignments that are aligned to more than one locus on the genome
-	samtools view $^ | awk '/NM:i:[0-9]+/ { if (int(substr($$0,match($$0, /NM:i:/)+5)) <= ${MISMATCHES}) print; }'  \
-	                 | awk '{ print $$0"\t"$$1; }' | uniq -f 14 -u | cut -f 1-14  >${aligner}_out/tmp.sam
+${aligner}_out/overlaps_exons.sam : $(BT)/bowtie_hits.sam
 	#
 	# find overlaps with features.
 	#
-	htseq-count --mode=intersection-strict -i transcript_id -o ${aligner}_out/overlaps_exons.sam  ${aligner}_out/tmp.sam \
+	awk '!/^@/ && $$3 != "*" { print }' $^ | htseq-count --mode=intersection-strict -i transcript_id -o ${aligner}_out/overlaps_exons.sam - \
 			"${REFDIR}/${GENOME}/${GENOME}_refseq_knowngenes.gtf" \
 	| awk '$$2 != 0 ' >${aligner}_out/gene_count.txt
+
+${aligner}_out/accepted_final.sam : ${aligner}_out/overlaps_exons.sam
 	#
 	# exclude alignments that are aligned to more than one gene, or to no gene at all.
 	#
-	(samtools view -H $^; awk '$$15 !~ "ambiguous|no_feature"'  ${aligner}_out/overlaps_exons.sam) >$@
-	rm -f ${aligner}_out/tmp.sam # ${aligner}_out/tmp2.sam
+	(awk '$$15 !~ "ambiguous|no_feature"' ${aligner}_out/overlaps_exons.sam) >$@
 
 #
 # filter out reads that align to ribosomal DNA
 #
-reads_nonrrna.fq : reads_trimmed.fq
+reads_nonrrna.fq rrna.stats : reads_trimmed.fq
 	bowtie -p 4 -S -n 2 -e 70 -l 28 --maxbts 125 -k 1 --al reads_rrna.fq --un $@ --phred33-quals "${REFDIR}/${GENOME}/rrna" $^  >rrna_aligned.sam 2>rrna.stats  
 
 #
@@ -240,7 +222,7 @@ too-short : tooshort.fq
 # aligned reads
 # in exons
 # in unique exons
-dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/accepted_final.sam
+old_dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/accepted_final.sam
 	@echo "making dbstats.txt..."
 	@grep "Processed reads" cutadapt.stats | awk '{print $$3}' >$@
 	@wc -l reads_trimmed.fq | awk '{print $$1/4}' >>$@
@@ -249,6 +231,17 @@ dbstats.txt:  ${aligner}_out/accepted_hits.bam ${aligner}_out/accepted_final.sam
 #	@wc -l ${aligner}_out/bowtie_aligned.fastq | awk '{print $$1/4}' >>$@
 	@grep -v '^@' ${aligner}_out/overlaps_exons.sam | wc -l >>$@
 	@grep -v '^@' ${aligner}_out/accepted_final.sam | wc -l >>$@
+
+
+dbstats.txt:  reads_trimmed.fq rrna.stats $(BT)/bowtie_hits.sam ${aligner}_out/overlaps_exons.sam  ${aligner}_out/accepted_final.sam
+	@echo "making dbstats.txt..."
+	@echo "raw="$$(awk '/Processed reads/ {print $$3}'  cutadapt.stats) | tee $@
+	@echo "trimmed="$$(awk 'END {print NR/4}'  reads_trimmed.fq) | tee -a $@
+	@echo "nonrrna="$$(awk '/failed to align/ {print $$7}' rrna.stats) | tee -a $@
+	@echo "aligned="$$(awk '!/^@/ && $$3 != "*" { print $$1 }'  $(BT)/bowtie_hits.sam | uniq | wc -l) | tee -a $@
+	@echo "in_exons="$$(grep -v 'no_feature' ${aligner}_out/overlaps_exons.sam | wc -l) | tee -a $@
+	@echo "ambiguous="$$(grep 'ambiguous' ${aligner}_out/overlaps_exons.sam | wc -l) | tee -a $@
+	@echo "in_uniq_exons="$$(grep -v '^@' ${aligner}_out/accepted_final.sam | wc -l) | tee -a $@
 
 db_stats:  dbstats.txt
 	$(SCRIPTS)/sql_enter_stats -g "$(GENOME)" -m "$(MISMATCHES)" -d "$(DATASET)" "$(EXPERIMENT)" <dbstats.txt

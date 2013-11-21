@@ -92,6 +92,7 @@ qarp.pvalue <- function(mat, aVec, permutations=NULL) {
     # available through adonis() then you will want to precompute your own
     # distance matrix and pass it in.
 
+    set.seed(seed)   # make the experiments repeatable, as long as permutations are the same.
     if (is.null(permutations))
         df <-  adonis(distance ~ aVec)
     else {
@@ -351,7 +352,6 @@ qarp.plotProfile <- function(mat, aVec, showsplices=TRUE, invert=FALSE, ...) {
         j <- attr(mat, "junctions")
         abline(v=j, col=addTrans("red",100), lty=2)
     }
-
     xpd <- par("xpd")
     par(xpd=TRUE)  # don't clip to the plot area
     smartlegend(x="center", y="top",
