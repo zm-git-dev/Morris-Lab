@@ -1,0 +1,7 @@
+export(qarp.distance)
+export(qarp.matrix)
+export(qarp.plotMDS)
+export(qarp.plotProfile)
+export(qarp.pvalue)
+export(qarp.read.cachedtsv)
+export(qarp)

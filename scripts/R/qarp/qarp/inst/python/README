@@ -1,0 +1,62 @@
+
+
+bam2depth.py will calculate read depths across genes for alignments in multiple BAM files.
+
+Usage - 
+      python bam2depth.py [-g gene] <annotation.gtf> <bamfile.bam. [<bamfile2.bam> <bamfile3.bam> ...]
+
+Prerequisites - 
+
+    bam2depth.py calls 'samtools depth' to do the depth calculation,
+    so the samtools package must be installed first.  You can download
+    the lastest samtools code from
+    http://sourceforge.net/projects/samtools/files/samtools/
+
+    'samtools depth' requires that there be a corresponding index file
+    for each BAM file.  Use 'samtools index' to make an index file,
+    e.g. 'samtools index exp1.bam' which will produce exp1.bam.bai in
+    the same directory.
+
+    bam2depth.py takes as its first argument a GTF file that specifies
+    chromosomes and regions covered by each feature (we're usually
+    taking about genes here, although it could be any type of region
+    you like).  If you've been doing bioinforatics for a while you are
+    nodoubt familiar with GTF files and may have some lying around
+    already.  Unfortunately getting a GTF file is more complicated
+    than it should be.  See the instructions on the UCSC genome wiki
+    for using genePredToGtf to download annotation files from the UCSC
+    web site,
+    http://genomewiki.ucsc.edu/index.php/Genes_in_gtf_or_gff_format
+
+
+Usage scenarios - 
+
+      NB: it is strongly suggested that you first try using
+      bam2depth.py with a single gene and a single BAM file.  That
+      will give the fastest results while debugging.
+
+      Calculate red depth for a single gene across a single BAM file.
+      The named gene must exist in the GTF reference file.
+      This is usually much faster than getting the depth across all
+      files in the GTF file.
+
+          python bam2depth.py -g ATBC RefSeq.gtf exp1.ba, exp2.bam
+
+      Calculate read depth across all features in RefSeq.gtf for a single BAM file.
+
+          python bam2depth.py RefSeq.gtf exp1.bam >depth.txt
+
+      Calculate read depth across all features in RefSeq.gtf for several BAM files.
+
+          python bam2depth.py RefSeq.gtf exp1.bam exp2.bam exp3.bam >depth.txt
+
+      Calculate read depth for a single gene in RefSeq.gtf for multiple
+      BAM files.  
+
+          python bam2depth.py -g ATBC RefSeq.gtf exp1.ba, exp2.bam
+
+      Calculate read depth for multiple genes across multiple BAM files.
+
+          python bam2depth.py -g ATBC,GENE2 RefSeq.gtf exp1.ba, exp2.bam
+
+
