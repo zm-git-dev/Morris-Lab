@@ -570,7 +570,7 @@ morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
         }
         df <- dbGetQuery(con, query)
         if (nrow(df) == 0) {
-            stop("Error during database query: no alignments in dataset '", dataset,
+            warning("Error during database query: no alignments in dataset '", dataset,
                  "' for gene(s) ", paste0(gene, collapse=","), "\n",
                  "Available datasets:\n",
                  as.character(morris.datasets(group)), call.=TRUE)

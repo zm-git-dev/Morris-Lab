@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-10-03 13:00:02 chris>
+# Time-stamp: <2013-11-18 13:49:08 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -95,13 +95,16 @@ shinyServer(function(input, output, session) {
 
         ## convert single-column data frame to a vector with names
         choices = rownames(descriptions)
-        names(choices) = descriptions$description
+        names(choices) = paste0(descriptions$description,"/",rownames(descriptions))
         ## create the data selection control
         selectInput(inputId = "dataSelect",
                     label = "Profile data sets:",
                     choices=choices)
     })
 
+
+
+    # retrieve the read depth data for a particular gene in a particular dataset
     rptData <- reactive({
         gene <- input$geneName
         if(is.null(gene))
@@ -114,16 +117,29 @@ shinyServer(function(input, output, session) {
         genome <- morris.getGenome(dataset)
         descriptions = morris.fetchinfo(dataset)[,"description", drop=FALSE]
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
+        if (nrow(kg) == 0) {
+            warning(sprintf("No known genes found in genome %s under the name %s", genome, gene))
+            return()
+        }
         rownames(kg) <- kg$name
 
-        if (nrow(kg) != 1)
-            return()
-
         ## remember the refseq name because that is what identifies each gene in a dataset
-        refseq <- kg[1,'name']
+        refseq <- kg[,'name']
+        message(sprintf("refseq names are %s", paste0(refseq, collapse=", ")))
 
         print(paste0("retrieving data for ", dataset))
+
         df <- morris.getalignments(dataset, refseq)
+        if (is.null(df))
+            warning("df is null")
+        if (nrow(df) == 0) {
+            warning(sprintf("Could not retrieve ay alignmemts for %s", paste0(refseq, collapse=", ")))
+            df <- morris.getalignments(dataset, gene)
+            if (is.null(df))
+                warning("df is null")
+            if (nrow(df) == 0) 
+                warning(sprintf("Could not retrieve ay alignmemts for %s", paste0(gene, collapse=", ")))
+        }
         attr(df, "dataset") <- dataset
         attr(df, "description") <- descriptions[dataset,"description"]
         attr(df, "refseq_name") <- refseq
@@ -186,13 +202,12 @@ shinyServer(function(input, output, session) {
             stats = morris.fetchstats(dataset)
             histdata$counts <- histdata$counts / (stats[dataset,"aligned_count"]/1e6)
         }
-        xlim <- view
 
-        
         plot(histdata$mids[histdata$counts != 0],histdata$counts[histdata$counts != 0],
-             type='h', xlim=xlim, lwd=3, lend=2,
+             type='h', lwd=3, lend=2,
              xlab="", ylab="", cex=1.5, frame.plot=F,
-             xaxt="n"
+             xaxt="n", yaxt="n",
+             xlim=view, ylim=c(0, 1.04*max(histdata$counts[histdata$counts != 0]))
              )
 
         # Draw a pretty X-axis.  The default axis sometimes does
@@ -206,7 +221,19 @@ shinyServer(function(input, output, session) {
         mgp[3] <- 0.5
         par(mgp=mgp)
         axis(1, at=ticks, labels=T, lwd=1, lwd.ticks=1, lty="solid", las=1, cex.axis=0.9)
+        ## NOT A MISTAKE!
+        ## draw a second x-axis line that is thicker than the first just over the CDS
+        ## region of the gene.
         axis(1, at=c(p$transcript()$cdsStart(), p$transcript()$cdsEnd()), labels=T, lwd=4, lwd.ticks=2, lty="solid", col.ticks="red",  cex.axis=0.9, font.axis=2)
+
+        # Draw a pretty Y-axis.  The default axis doesn't cross the axis at 0.
+        # By drawing our own we have more control over exacty
+        # how it looks.
+        #
+        # par(mgp=c(axis.title.position, axis.label.position, axis.line.position))
+        ticks <- pretty(c(0, 1.04*max(histdata$counts[histdata$counts != 0])), 4)
+        axis(2, at=ticks, padj=1, labels=T, lwd=1, lwd.ticks=1, lty="solid", las=1,
+              cex.axis=0.9)
 
         # draw a subtle grid in the background of the plot
         grid(nx=0)
