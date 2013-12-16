@@ -70,7 +70,15 @@ shinyUI(
                                  checkboxInput(inputId = "normalize",
                                                label = "Normalize read counts",
                                                value = TRUE)),
-                             helpText("Scale counts to total aligned reads.")
+                             helpText("Scale counts to total aligned reads."),
+
+                             gsub("label class=\"radio\"", "label class=\"radio inline\"",
+                                  radioButtons("bias", "Distribution type:",
+                                               c("5'" = "left",
+                                                 "center" = "middle",
+                                                 "3'" = "right"),
+                                               "center"))
+
                              )
                          )
 

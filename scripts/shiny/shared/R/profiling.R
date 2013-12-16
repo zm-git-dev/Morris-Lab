@@ -199,7 +199,9 @@ profile <- function(df, gene.data) {
         ## the 5'-end
         if (bias == "middle") 
           df$rpositions = df$rpositions + df$length/2.0
-
+        else if (bias == "right")
+          df$rpositions = df$rpositions + df$length - 1
+            
         ## if the user is zooming in on a portion of the transcript, set the
         ## limits of the horizontal axis accordingly.   Otherwise the limits
         ## are determined by the length of the transcript.

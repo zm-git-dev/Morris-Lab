@@ -166,7 +166,7 @@ shinyServer(function(input, output, session) {
             view <- c(1,p$transcript()$txLength())
         }
 
-        df <- p$plotpositions()
+        df <- p$plotpositions(bias=input$bias)
         
         ## count how many reads occur on each position.
         message(paste("gene = ", input$geneName))
