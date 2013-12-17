@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-11-21 12:39:46 chris>
+# Time-stamp: <2013-12-16 17:08:20 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -293,10 +293,18 @@ shinyServer(function(input, output, session) {
             p <- rptData()
             if (is.null(p))
                 return()
-            df <- p$alignments()
+            df <- p$plotpositions(bias=input$bias)
             df <- subset(df,,c(-feature))
             print(head(df))
-            write.csv(df, file)
+
+            con <- file(file, open="wt")
+            writeLines(paste("# created on", Sys.time()), con)
+            writeLines(sprintf("# Gene %s", input$geneName), con)
+            writeLines(sprintf("# bias: %s", input$bias), con)
+
+            write.csv(df, con, row.names=FALSE, quote=FALSE)
+            close(con)
+
         }
         )
 

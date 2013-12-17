@@ -73,7 +73,7 @@ shinyUI(
                              helpText("Scale counts to total aligned reads."),
 
                              gsub("label class=\"radio\"", "label class=\"radio inline\"",
-                                  radioButtons("bias", "Distribution type:",
+                                  radioButtons("bias", "Anchor position:",
                                                c("5'" = "left",
                                                  "center" = "middle",
                                                  "3'" = "right"),
