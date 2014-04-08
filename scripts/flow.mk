@@ -63,7 +63,7 @@ cmd.gz=gunzip -c
 cmd=$(if $(cmd$(suffix ${rawreads})),$(cmd$(suffix ${rawreads})),cat)
 
 reads_trimmed.fq tooshort.fq  cutadapt.stats : ${rawreads}
-	${cmd} $^ | fastq_quality_trimmer -Q 33 -t 25 -l ${LENGTH} -i /dev/stdin -o $(basename $^)_trim.fq
+	${cmd} $^ | fastx_trimmer -Q 33 -l 36 | fastq_quality_trimmer -Q 33 -t 25 -l ${LENGTH} -i /dev/stdin -o $(basename $^)_trim.fq
 ifeq ($(REVERSECOMPLEMENT),1)
 	cat $(basename $^)_trim.fq | cutadapt -f fastq -m ${LENGTH} -a ${ADAPTER} --too-short-output=tooshort.fq /dev/stdin 2> cutadapt.stats | fastx_reverse_complement -Q33 -o $@
 else
@@ -87,7 +87,7 @@ $(BT)/bowtie_hits.sam : reads_nonrrna.fq
 	# bowtie -p 4 --un $(BT)/bowtie_nomatch.fastq --al $(BT)/bowtie_aligned.fastq --best -k 3 -v ${MISMATCHES} --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
 	# used to filter the alignments for mismatches and multiple loci.
 	# now we use bowtie options to produce the right output in the first place.
-	bowtie -p 4 -n 1 --best --strata  -m ${MISMATCHES} -l 36 --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
+	bowtie -p 4 --un $(BT)/bowtie_nomatch.fq -n 1 --best --strata  -m ${MISMATCHES} -l 36 --sam "${REFDIR}/${GENOME}/${GENOME}"  $^ 2>&1 >$@ | tee $(BT)/bowtie_hits.stats 
 
 
 $(TH)/accepted_hits.bam: reads_nonrrna.fq 
@@ -99,19 +99,26 @@ $(TH)/accepted_hits.bam: reads_nonrrna.fq
 # filter out alignments that are aligned to more than one locus on the genome.
 # exclude alignments that are aligned to more than one gene, or to no gene at all.
 
+#
+# find overlaps with features.
+#
 ${aligner}_out/overlaps_exons.sam : $(BT)/bowtie_hits.sam
-	#
-	# find overlaps with features.
-	#
-	awk '!/^@/ && $$3 != "*" { print }' $^ | htseq-count --mode=intersection-strict -i transcript_id -o ${aligner}_out/overlaps_exons.sam - \
-			"${REFDIR}/${GENOME}/${GENOME}_refseq_knowngenes.gtf" \
-	| awk '$$2 != 0 ' >${aligner}_out/gene_count.txt
+	@echo "finding overlaps with known genes..."
+	@awk '!/^@/ && $$3 != "*" { print }' $^ \
+		| htseq-count --quiet --mode=intersection-strict -i gene_id -o ${aligner}_out/tmp.sam - \
+				"${REFDIR}/${GENOME}/${GENOME}_refseq_knowngenes.gtf" \
+		| awk '$$2 != 0 ' >${aligner}_out/gene_count.txt
+	@# htseq-count can't deal with SAM headers, so they get stripped off.
+	@# add the header back onto the front of the annotated SAM file.
+	@(head -1000 $^ | grep '^@';  cat  ${aligner}_out/tmp.sam) >$@
+	@rm -f ${aligner}_out/tmp.sam
 
+#
+# exclude alignments that are aligned to more than one gene, or to no gene at all.
+#
 ${aligner}_out/accepted_final.sam : ${aligner}_out/overlaps_exons.sam
-	#
-	# exclude alignments that are aligned to more than one gene, or to no gene at all.
-	#
-	(awk '$$15 !~ "ambiguous|no_feature"' ${aligner}_out/overlaps_exons.sam) >$@
+	@echo "exclude ambiguous or unannotated alignments..."
+	@(awk '/^@/ || $$15 !~ "ambiguous|no_feature"' ${aligner}_out/overlaps_exons.sam) >$@
 
 #
 # filter out reads that align to ribosomal DNA
@@ -269,13 +276,15 @@ ${aligner}_out/htseq.bam: ${aligner}_out/htseq_hits.sam
 igv: ${aligner}_out/accepted_final.bam ${aligner}_out/genomic.bam
 
 ${aligner}_out/accepted_final.bam: ${aligner}_out/accepted_final.sam
-	samtools view -S -b  ${aligner}_out/accepted_final.sam > ${aligner}_out/igv.bam	
-	samtools sort ${aligner}_out/igv.bam ${aligner}_out/igv_s
-	samtools index ${aligner}_out/igv_s.bam
-	mv ${aligner}_out/igv_s.bam  ${aligner}_out/accepted_final.bam
-	mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/accepted_final.bam.bai
+	@echo "create bam files and indicies for IGV..."
+	@samtools view -S -b  ${aligner}_out/accepted_final.sam > ${aligner}_out/igv.bam	
+	@samtools sort ${aligner}_out/igv.bam ${aligner}_out/igv_s
+	@samtools index ${aligner}_out/igv_s.bam
+	@mv ${aligner}_out/igv_s.bam  ${aligner}_out/accepted_final.bam
+	@mv ${aligner}_out/igv_s.bam.bai  ${aligner}_out/accepted_final.bam.bai
 
-${aligner}_out/genomic.bam :  ${aligner}_out/accepted_hits.bam
+${aligner}_out/genomic.bam :  ${aligner}_out/bowtie_hits.sam
+	samtools view -S -b  ${aligner}_out/bowtie_hits.sam > ${aligner}_out/accepted_hits.bam	
 	samtools sort ${aligner}_out/accepted_hits.bam ${aligner}_out/genomic_s
 	samtools index ${aligner}_out/genomic_s.bam
 	mv ${aligner}_out/genomic_s.bam ${aligner}_out/genomic.bam
@@ -305,17 +314,16 @@ HTML=/var/www/html
 export EXPERIMENT
 
 install-alignments: ${aligner}_out/genomic.bam ${aligner}_out/accepted_final.bam
-	-mkdir -p  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}
-	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bam
-	-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bai
-	cp ${aligner}_out/genomic.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam
-	cp ${aligner}_out/genomic.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam.bai
-	cp ${aligner}_out/accepted_final.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam
-	cp ${aligner}_out/accepted_final.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam.bai
-	# cp rrna.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam
-	# cp rrna.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_rrna.bam.bai
-	# cp sample.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam
-	# cp sample.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_smallrrna.bam.bai
+	@echo "copy bam files and indicies to web server $(HTML)"
+	@-mkdir -p  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}
+	@-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bam
+	@-rm -f  $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/*.bai
+	@cp ${aligner}_out/genomic.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam
+	@cp ${aligner}_out/genomic.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam.bai
+	@cp ${aligner}_out/accepted_final.bam $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam
+	@cp ${aligner}_out/accepted_final.bam.bai $(HTML)/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam.bai
+	@echo "http://`hostname`/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_exons.bam"
+	@echo "http://`hostname`/alignments/$${EXPERIMENT%_*}/${DATASET}/${DATASET}_genomic.bam"
 
 rrna_depth.txt: rrna.bam
 	samtools depth rrna.bam | sort -k 3rn >rrna_depth.txt
