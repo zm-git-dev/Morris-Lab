@@ -1,6 +1,6 @@
 
 
-getCDSAlignments <- function(dataset, group=NULL) {
+getCDSAlignments <- function(dataset, anchor, group=NULL) {
     ## this routine operates only on ONE dataset name - NOT a vector!
     stopifnot(length(dataset) == 1)
 
@@ -31,20 +31,26 @@ getCDSAlignments <- function(dataset, group=NULL) {
         ## These individual tables will be joined together based on the gene name
         ## as a common key.   Oddly eough it is faster to do this in R than it is
         ## in SQL.
+        anchor.adjustment <- switch(anchor,
+            left='',
+            middle='+(case when (a.strand = "+") then (a.length) else (-a.length) end)/2)',
+            right='+(case when (a.strand = "+") then (a.length) else (-a.length) end))',
+            stop("unrecognized input$anchor value"))
+        
 
         query <- paste(sprintf('select a.feature, k.name2 as "common", count(*) as "%s" from ', dataset),
                        '( morris.new_alignments_tbl a join datasets_tbl d ON a.dataset_id = d.id)',
                        'join knowngenes2 k on k.name=a.feature',
-                       sprintf('where d.name like "%s%%"', dataset),
-                       'and (a.position+(case when (a.strand = "+") then (a.length) else (-a.length) end)/2)',
-                       'between k.cdsStart and k.cdsEnd',
+                       sprintf('where d.name="%s"', dataset),
+                       'and (',
+                       sprintf("a.position %s", anchor.adjustment),
+                       'between k.cdsStart and k.cdsEnd)',
                        'group by a.feature')
+        message(query)
         df <- dbGetQuery(con, query)
         if (nrow(df) == 0) {
             stop("Error during database query: no alignments in dataset '", dataset,
-                 "' for gene(s) ", paste0(gene, collapse=","), "\n",
-                 "Available datasets:\n",
-                 as.character(morris.datasets(group)), call.=TRUE)
+                 "\n", call.=TRUE)
         }
         rownames(df) <- df$feature
         df <- subset(df, select=c(-feature))

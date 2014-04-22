@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2013-11-06 11:17:05 chris>
+# Time-stamp: <2014-04-21 17:30:02 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -16,26 +16,6 @@ cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2",
 
 shinyServer(function(input, output, session) {
 
-    observe({
-        message("Inside printmenu observer")
-        selection = input$printmenu1
-        if (is.null(selection))
-            return()
-        selection = sub("^([^.]*)-.*", "\\1", selection)
-        if (selection == "print") {
-            message("	invoke print")
-        } else if (selection == "png") {
-            message("	invoke png")
-        } else if (selection == "pdf") {
-            message("	invoke pdf")
-        } else if (selection == "stop") {
-            message("	invoke stop")
-            shiny::stopApp()
-        } else {
-            message(paste0("	unknown printmenu command - ", selection) )
-        }
-    })
-
     output$downloadPng <- downloadHandler(
         filename = function() {
             paste('data-', Sys.Date(), '.png', sep='')
@@ -49,8 +29,7 @@ shinyServer(function(input, output, session) {
         contentType = 'image/png'
         )
 
-
-
+    
     # Reactive function for retrieving a list of genes covered in the
     # datasets as specified by inputDatasets.
     geneChoices <- reactive({
@@ -115,15 +94,34 @@ shinyServer(function(input, output, session) {
         descriptions = morris.fetchinfo(dataset)[,"description", drop=FALSE]
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
         rownames(kg) <- kg$name
-
-        if (nrow(kg) != 1)
+        if (nrow(kg) == 0) {
+            message(sprintf("Unrecognized gene name \"%s\"", gene))
             return()
+        }
+        if (nrow(kg) != 1) {
+            message(sprintf("Ambiguous gene name \"%s\" - returns %d entries.", gene, nrow(kg)))
+            message("choosing longest isoform....")
+        }
 
-        ## remember the refseq name because that is what identifies each gene in a dataset
-        refseq <- kg[1,'name']
+        ## As a crude hack, when there are multiple entries for a
+        ## given gene name, choose the one that has the longest
+        ## transcript.  In the case of Shank2 this chooses the longest
+        ## isoform; for other non-overlapping cases this hack will not
+        ## help.
+        message(paste(rownames(kg), collapse=" "))
+        apply(kg, 1, function(row) { message(class(row)) })
+        apply(kg, 1, function(row) { message(paste(row, collapse=" : ")) })
+        t <- lapply(rownames(kg), function(name) { transcript(kg[name,])$txLength() } )
+        refseq <- kg[which.max(t),'name']
 
-        print(paste0("retrieving data for ", dataset))
+        message(paste0("retrieving data for ", dataset, " gene ", refseq))
         df <- morris.getalignments(dataset, refseq)
+        message(paste("alignments dataset ", paste(dim(df), collapse=",")))
+        if (nrow(df)==0) {
+            message(paste0("retrieving data for ", dataset, " gene ", gene))
+            df <- morris.getalignments(dataset, gene)
+        }
+
         attr(df, "dataset") <- dataset
         attr(df, "description") <- descriptions[dataset,"description"]
         attr(df, "refseq_name") <- refseq
@@ -150,7 +148,7 @@ shinyServer(function(input, output, session) {
             view <- c(1,p$transcript()$txLength())
         }
 
-        df <- p$plotpositions()
+        df <- p$plotpositions(anchor=input$anchor)
         
         ## count how many reads occur on each position.
         message(paste("gene = ", input$geneName))
@@ -164,17 +162,21 @@ shinyServer(function(input, output, session) {
         # span range of 'x'".  e.g. Arg1 in 'young calorie restricted"
         # or Actb in all datasets from that experiment."
         #
-        # This is a temporary hack to get around this error.  The underlying cause is that some reads the should be
-        # wholly inside the transcript are somehow being migrated outside the bounds of the transcript.  I suspect this has
-        # to do with a miscalculation of read position on negative-strand genes.
+        # This is a temporary hack to get around this error.  The
+        # underlying cause is that some reads the should be wholly
+        # inside the transcript are somehow being migrated outside the
+        # bounds of the transcript.  I suspect this has to do with a
+        # miscalculation of read position on negative-strand genes.
         #
-        # print out the reads that fall outside the transcript (these would cause an error if they remained).
-        print(df[df$rposition > p$transcript()$txLength(),,drop=FALSE])
+
         # remove reads that fall outside the transcript.
         df <- df[df$rposition < p$transcript()$txLength(),,drop=FALSE]
-
+        df <- df[df$rposition > 0,,drop=FALSE]
+        message("after filtering positions....")
+        message(paste0(dim(df), collapse=","))
 
         histdata <- hist(df$rposition, breaks=c(1:p$transcript()$txLength()), plot=FALSE)
+        
         par(mar=c(3, 3, 0.5, 1))  # Trim margin around plot [bottom, left, top, right]
 
         par(mgp=c(1.5, 0.2, 0))  # Set margin lines; default c(3, 1, 0) [title,labels,line]
@@ -208,7 +210,8 @@ shinyServer(function(input, output, session) {
         ## NOT A MISTAKE!
         ## draw a second x-axis line that is thicker than the first just over the CDS
         ## region of the gene.
-        axis(1, at=c(p$transcript()$cdsStart(), p$transcript()$cdsEnd()), labels=T, lwd=4, lwd.ticks=2, lty="solid", col.ticks="red",  cex.axis=0.9, font.axis=2)
+        axis(1, at=c(p$transcript()$cdsStart(), p$transcript()$cdsEnd()), labels=T,
+             lwd=4, lwd.ticks=2, lty="solid", col.ticks="red",  cex.axis=0.9, font.axis=2)
 
         # Draw a pretty Y-axis.  The default axis doesn't cross the axis at 0.
         # By drawing our own we have more control over exacty
@@ -277,8 +280,9 @@ shinyServer(function(input, output, session) {
             p <- rptData()
             if (is.null(p))
                 return()
-            df <- p$alignments()
+            df <- p$plotpositions(anchor=input$anchor)
             df <- subset(df,,c(-feature))
+
             print(head(df))
             write.csv(df, file)
         }
@@ -293,7 +297,7 @@ shinyServer(function(input, output, session) {
             if (is.null(dataset))
                 return()
 
-            df <- getCDSAlignments(dataset)
+            df <- getCDSAlignments(dataset, input$anchor)
 
             print(head(df))
             write.csv(df, file)

@@ -71,7 +71,13 @@ shinyUI(
                                                label = "Normalize read counts",
                                                value = TRUE)),
                              helpText("Scale counts to total aligned reads.")
-                             )
+                             ),
+
+                         gsub("label class=\"radio\"", "label class=\"radio inline\"",
+                              radioButtons("anchor", "Anchor point:",
+                                           c("5'" = "left",
+                                             "center" = "middle",
+                                             "3'" = "right")))
                          )
 
                 )

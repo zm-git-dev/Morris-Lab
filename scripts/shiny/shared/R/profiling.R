@@ -189,7 +189,7 @@ profile <- function(df, gene.data) {
     rpositions <- function() {   # relative positions w.r.t. start of transcript
         rpositions = sapply(X=df$position, FUN=xsript$rpos)
     }
-    plotpositions <- function(xlim=NULL, units="nucleotide", bias="middle", minlen=0) {
+    plotpositions <- function(xlim=NULL, units="nucleotide", anchor="middle", minlen=0) {
         ## filtered plot positions
         df <- alignments()
         transcript <- transcript()
@@ -197,9 +197,11 @@ profile <- function(df, gene.data) {
         ## Calculate the relative position of each alignment w.r.t. start of transcript.
         ## position may be calculated with respect to the middle of the read or
         ## the 5'-end
-        if (bias == "middle") 
+        if (anchor == "middle") 
           df$rpositions = df$rpositions + df$length/2.0
-
+        else if (anchor == "right")
+          df$rpositions = df$rpositions + df$length
+            
         ## if the user is zooming in on a portion of the transcript, set the
         ## limits of the horizontal axis accordingly.   Otherwise the limits
         ## are determined by the length of the transcript.
@@ -260,7 +262,7 @@ print.profile <- function(this) {
 
 
 ## specialization of generic plot function for instances of 'profile' class.
-plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", minlen=0, identify=FALSE, ...) {
+plot.profile <- function(self, xlim=NULL, units="nucleotide", anchor="middle", minlen=0, identify=FALSE, ...) {
     usr = par()$usr
     plt = par()$plt
 
@@ -295,7 +297,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     }
 
     ## calculate the ribosome positions relative to start of transcript.
-    df <- self$plotpositions(xlim=xlim, units=units, bias=bias, minlen=minlen)
+    df <- self$plotpositions(xlim=xlim, units=units, anchor=anchor, minlen=minlen)
     
     ## Draw the histogram in the top 2/3 of the plot area.
     par(plt=c(plt[1], plt[2], plt[3]+(plt[4]-plt[3])/3, plt[4]))
@@ -333,7 +335,7 @@ plot.profile <- function(self, xlim=NULL, units="nucleotide", bias="middle", min
     } else {
         legend=paste(legend,",xlim=",xlim[1], ",", xlim[2])
     }
-    legend=paste(legend,"bias=",paste0("\"", bias, "\""))
+    legend=paste(legend,"anchor=",paste0("\"", anchor, "\""))
     legend=paste(legend,"minlen=",minlen)
     
     ##text(tmp[1], 0, legend, adj=c(0,-1), col="grey56")
