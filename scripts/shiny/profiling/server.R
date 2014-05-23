@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2014-04-21 17:30:02 chris>
+# Time-stamp: <2014-05-23 09:24:18 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -81,6 +81,9 @@ shinyServer(function(input, output, session) {
                     choices=choices)
     })
 
+
+
+    # retrieve the read depth data for a particular gene in a particular dataset
     rptData <- reactive({
         gene <- input$geneName
         if(is.null(gene))
@@ -93,6 +96,7 @@ shinyServer(function(input, output, session) {
         genome <- morris.getGenome(dataset)
         descriptions = morris.fetchinfo(dataset)[,"description", drop=FALSE]
         kg <- morris.getknowngenes(genome, gene=gene, group=NULL)
+
         rownames(kg) <- kg$name
         if (nrow(kg) == 0) {
             message(sprintf("Unrecognized gene name \"%s\"", gene))
@@ -121,6 +125,7 @@ shinyServer(function(input, output, session) {
             message(paste0("retrieving data for ", dataset, " gene ", gene))
             df <- morris.getalignments(dataset, gene)
         }
+
 
         attr(df, "dataset") <- dataset
         attr(df, "description") <- descriptions[dataset,"description"]
@@ -284,7 +289,15 @@ shinyServer(function(input, output, session) {
             df <- subset(df,,c(-feature))
 
             print(head(df))
-            write.csv(df, file)
+
+            con <- file(file, open="wt")
+            writeLines(paste("# created on", Sys.time()), con)
+            writeLines(sprintf("# Gene %s", input$geneName), con)
+            writeLines(sprintf("# bias: %s", input$bias), con)
+
+            write.csv(df, con, row.names=FALSE, quote=FALSE)
+            close(con)
+
         }
         )
 

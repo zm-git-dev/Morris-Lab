@@ -21,12 +21,15 @@ import collections
 import subprocess
 import os
 
+verbose = 0
+samtool = "samtools"
+
 """ Print a usage message
 """
 def usage(msg = None):
     if msg is not None:
         print(msg)
-    print(__name__, " <gtf_file> <bam files>")
+    print(__name__, " [-h] [-g gene] [-s /path/to/samtools] <gtf_file> <bam files>")
 
 def run_command(command):
     p = subprocess.Popen(command,
@@ -46,6 +49,8 @@ def flatten(x):
     return result
 
 
+
+
 def processGene(bamfiles, transID, chrom, strand, exons):
     # if on the reverse strand, exons are listed in reverse order
     if strand == '-':
@@ -54,15 +59,34 @@ def processGene(bamfiles, transID, chrom, strand, exons):
     # keep track of the transcript position of each exon.
     exonPos = 0
     exonNum = 1
+    error = 0
     for exon in exons:
-        cmd = ["samtools", "depth", bamfiles, "-r", "%s:%d-%d" % (chrom, exon[0], exon[1])]
+        cmd = [samtool,  "depth", "-r", "%s:%d-%d" % (chrom, exon[0], exon[1]), bamfiles]
         cmd = flatten(cmd)
-        
-        # print(cmd, file=sys.stderr)
+        print (" ".join(cmd), file=sys.stderr) if (verbose) else 0
         for line in run_command(cmd):
+            if (error):
+                print(line, end="")
+                continue
+
             line = line.rstrip("\n")
+            
             # parse the line to get the genomic position so we can calculate the transcript position
             depth =line.split()
+
+            # do some sanity checks on the output from 'samtools depth'
+            if (len(depth) < 3):
+                print(line+"\n")
+                error = 1
+                continue
+                
+            try:
+                genomePos = int(depth[1])
+            except ValueError:
+                print(line+"\n")
+                error = 1
+                continue
+            
             genomePos = int(depth[1])
             if strand == '+':
                 transPos = exonPos + genomePos - exon[0] + 1
@@ -78,13 +102,6 @@ def processGTF(gtffile, bamfiles, geneList):
     """
     return a dictionary to sequences.  Use the sequence identifier as the key.
     """
-
-    ## damn, there is no way to debug a python
-    ## program that expects file input from stdin.  When someone asks about this
-    ## egregious behavior the replies are all the same - change your
-    ## program to read from a file.  I would rather have this program
-    ## take the gtf file on stdin, but if I do that python cannot
-    ## debug it.
 
     hdr = "symbol\ttransPos\texonNumber\tchrm\tgenomePos"
     for bfile in bamfiles:
@@ -151,14 +168,20 @@ def main(argv = None):
     if argv is None:
         argv = sys.argv
     try:
-        opts, args = getopt.getopt(argv, "hg:", ["help", "output="])
+        opts, args = getopt.getopt(argv, "hvs:g:", ["help", "output="])
     except getopt.GetoptError, msg:          
         usage(msg)                         
         return 2
     for opt, arg in opts:
         if opt in ("-h", "--help"):      
             usage()                     
-            sys.exit()                  
+            sys.exit()
+        elif opt in ("-v", "--verbose"):
+            global verbose
+            verbose = 1                  
+        elif opt in ("-s", "--samtool"):
+            global samtool
+            samtool = arg              
         elif opt in ("-g", "--gene"):      
             genelist.append(*arg.split(","))
         elif opt == '--':  # end of options
@@ -168,6 +191,11 @@ def main(argv = None):
             return 2
 
     gtfFile = args[0]
+    ext = os.path.splitext(os.path.basename(gtfFile))[1]
+    if (ext.lower() == ".gtf" and ext.lower() == "gff"):
+        print("the first argument \"%s\" does not have a recognized extsion (.gtf or .gff)."
+             "Are you sure it is a GTF file?" % gtfFile)
+
     bamFiles = args[1:]
 
     processGTF(gtfFile, bamFiles, genelist)

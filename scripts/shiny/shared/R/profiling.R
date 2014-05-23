@@ -200,7 +200,7 @@ profile <- function(df, gene.data) {
         if (anchor == "middle") 
           df$rpositions = df$rpositions + df$length/2.0
         else if (anchor == "right")
-          df$rpositions = df$rpositions + df$length
+          df$rpositions = df$rpositions + df$length - 1 
             
         ## if the user is zooming in on a portion of the transcript, set the
         ## limits of the horizontal axis accordingly.   Otherwise the limits

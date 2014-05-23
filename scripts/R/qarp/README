@@ -1,0 +1,101 @@
+
+
+There are three main threads of development in this source tree.
+
+- A package of R functions for analysis of RNA-SEQ and RNA-RIB
+  profiles.The R programs at the top level and in the R/ subdirectory
+  comprise
+
+- An application in 'shiny/' to make the analysis more accessible by
+embedding it in a Shiny app.  Shiny is an R package that makes
+interactive applications available in web browsers.
+
+- The Python script under python that will read a series of BAM file
+and a feature annotation file (in GTF format) and produces a text file
+containing read depths across the selected features.  The output of
+this script is a table that can be read into the supplied R functions
+for analysis.
+
+
+The qarp package can be loaded with,
+
+    R CMD INSTALL --build qarp_0.1-1.tar.gz
+
+
+In addition to the qarp package, there is an example usage script, example.R.
+This script can be sourced into an R interactive session.  The output from
+such a session is shown below.
+
+     $ R
+     R version 3.0.2 (2013-09-25) -- "Frisbee Sailing"
+     Copyright (C) 2013 The R Foundation for Statistical Computing
+     Platform: x86_64-unknown-linux-gnu (64-bit)
+
+     R is free software and comes with ABSOLUTELY NO WARRANTY.
+     You are welcome to redistribute it under certain conditions.
+     Type 'license()' or 'licence()' for distribution details.
+
+       Natural language support but running in an English locale
+
+     R is a collaborative project with many contributors.
+     Type 'contributors()' for more information and
+     'citation()' on how to cite R or R packages in publications.
+
+     Type 'demo()' for some demos, 'help()' for on-line help, or
+     'help.start()' for an HTML browser interface to help.
+     Type 'q()' to quit R.
+
+     > source("example.R")
+
+     Loading required package: ggplot2
+     Find out what's changed in ggplot2 with
+     news(Version == "0.9.3.1", package = "ggplot2")
+     Loading required package: reshape
+     Loading required package: plyr
+
+     Attaching package: ‘reshape’
+
+     The following objects are masked from ‘package:plyr’:
+
+	 rename, round_any
+
+     Loading required package: vegan
+     Loading required package: permute
+     Loading required package: lattice
+     This is vegan 2.0-9
+     Loading required package: grid
+     [1] "Calculated pvalue for LCN2 = 0.027597"
+		pvalues
+     CALR         0.017
+     FASN         0.017
+     LDHA         0.020
+     GIPC1        0.021
+     KRT19        0.021
+     MRPL12       0.021
+     PSMA5        0.021
+     ATP5H        0.022
+     CRIP1        0.022
+     FGFBP1       0.022
+     LGALS1       0.022
+     RNU11        0.022
+     AKR1B1       0.023
+     MAL          0.023
+     PPDPF        0.024
+     TXN          0.024
+     ALDOA        0.025
+     B2M          0.025
+     LCN2         0.026
+     MT2A         0.026
+     MYL6         0.026
+     NDUFB9       0.026
+     NDUFS5       0.026
+     RNU12        0.026
+     TUBA4A       0.026
+     ALDH1A3      0.027
+     ANXA1        0.027
+     CAPG         0.027
+     CD63         0.027
+     ENO1         0.027
+      [ reached getOption("max.print") -- omitted 170 rows ]
+
+

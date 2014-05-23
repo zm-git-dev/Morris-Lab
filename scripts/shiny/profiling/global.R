@@ -36,8 +36,22 @@ getCDSAlignments <- function(dataset, anchor, group=NULL) {
             middle='+(case when (a.strand = "+") then (a.length) else (-a.length) end)/2)',
             right='+(case when (a.strand = "+") then (a.length) else (-a.length) end))',
             stop("unrecognized input$anchor value"))
-        
+        query <- sprintf(paste(
+            'SELECT ',
+            '    a.feature, k.name2 as "common", count(*) as "%s"',
+            'FROM',
+            '    morris.new_alignments_tbl a',
+            '        join',
+            '    datasets_tbl d ON d.id = dataset_id',
+            '        join',
+            '    knowngenes2 k ON k.genome = d.genome',
+            '        and k.name2 = a.feature',
+            'where',
+            '    d.name = "%s" and (a.position %s between k.cdsStart and k.cdsEnd)',
+            'group by a.feature;'), dataset, dataset, anchor.adjustment);
 
+NOTDEF <- function() {
+    ## olf query for reference iuntil the new stuff is working reliably
         query <- paste(sprintf('select a.feature, k.name2 as "common", count(*) as "%s" from ', dataset),
                        '( morris.new_alignments_tbl a join datasets_tbl d ON a.dataset_id = d.id)',
                        'join knowngenes2 k on k.name=a.feature',
@@ -46,6 +60,9 @@ getCDSAlignments <- function(dataset, anchor, group=NULL) {
                        sprintf("a.position %s", anchor.adjustment),
                        'between k.cdsStart and k.cdsEnd)',
                        'group by a.feature')
+    }
+
+        
         message(query)
         df <- dbGetQuery(con, query)
         if (nrow(df) == 0) {

@@ -580,6 +580,27 @@ morris.getalignments <- function(dataset, gene=NULL, group=NULL) {
              as.character(morris.datasets(group)), call.=TRUE)
     }
 
+# old version of SQL code
+# delete when working.
+        ## ## SQL query for retrieving the per-gene alignment count of a single dataset.
+        ## ## These individual tables will be joined together based on the gene name
+        ## ## as a common key.   Oddly eough it is faster to do this in R than it is
+        ## ## in SQL.
+        ## query <- paste0("select feature,position,length from ",
+        ##                 "new_alignments_tbl a join datasets_tbl d on a.dataset_id=d.id ",
+        ##                 "where d.name like '", dataset, "%'")
+        ## if (!is.null(gene)) {
+        ##     query <- paste0(query, " and a.feature in (", paste0("'",gene,"'", collapse=","), ")")
+        ## }
+        ## df <- dbGetQuery(con, query)
+        ## if (nrow(df) == 0) {
+        ##     warning("Error during database query: no alignments in dataset '", dataset,
+        ##          "' for gene(s) ", paste0(gene, collapse=","), "\n",
+        ##          "Available datasets:\n",
+        ##          as.character(morris.datasets(group)), call.=TRUE)
+        ## }
+
+
     attr(df, "genome") <- genome
     attr(df, "dataset") <- dataset
 
