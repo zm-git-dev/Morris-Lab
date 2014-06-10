@@ -1,6 +1,6 @@
 # libraries used. install as necessary
 
-# Time-stamp: <2014-05-23 09:24:18 chris>
+# Time-stamp: <2014-05-23 16:43:38 chris>
 
   library(shiny)
   library(plyr)  # manipulating data
@@ -113,7 +113,6 @@ shinyServer(function(input, output, session) {
         ## isoform; for other non-overlapping cases this hack will not
         ## help.
         message(paste(rownames(kg), collapse=" "))
-        apply(kg, 1, function(row) { message(class(row)) })
         apply(kg, 1, function(row) { message(paste(row, collapse=" : ")) })
         t <- lapply(rownames(kg), function(name) { transcript(kg[name,])$txLength() } )
         refseq <- kg[which.max(t),'name']
@@ -124,6 +123,7 @@ shinyServer(function(input, output, session) {
         if (nrow(df)==0) {
             message(paste0("retrieving data for ", dataset, " gene ", gene))
             df <- morris.getalignments(dataset, gene)
+            message(sprintf("retrieved %d alignments for gene %s:%s", nrow(df), dataset, gene))
         }
 
 

@@ -29,7 +29,7 @@ getCDSAlignments <- function(dataset, anchor, group=NULL) {
 
         ## SQL query for retrieving the per-gene alignment count of a single dataset.
         ## These individual tables will be joined together based on the gene name
-        ## as a common key.   Oddly eough it is faster to do this in R than it is
+        ## as a common key.   Surprisingly, it is faster to do this in R than it is
         ## in SQL.
         anchor.adjustment <- switch(anchor,
             left='',
@@ -49,18 +49,6 @@ getCDSAlignments <- function(dataset, anchor, group=NULL) {
             'where',
             '    d.name = "%s" and (a.position %s between k.cdsStart and k.cdsEnd)',
             'group by a.feature;'), dataset, dataset, anchor.adjustment);
-
-NOTDEF <- function() {
-    ## olf query for reference iuntil the new stuff is working reliably
-        query <- paste(sprintf('select a.feature, k.name2 as "common", count(*) as "%s" from ', dataset),
-                       '( morris.new_alignments_tbl a join datasets_tbl d ON a.dataset_id = d.id)',
-                       'join knowngenes2 k on k.name=a.feature',
-                       sprintf('where d.name="%s"', dataset),
-                       'and (',
-                       sprintf("a.position %s", anchor.adjustment),
-                       'between k.cdsStart and k.cdsEnd)',
-                       'group by a.feature')
-    }
 
         
         message(query)
